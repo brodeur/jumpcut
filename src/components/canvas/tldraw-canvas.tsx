@@ -438,7 +438,8 @@ export default function TldrawCanvas({
     if (!editor) return;
     const isGenLevel = currentLevel === "face" || currentLevel === "body" || currentLevel === "wardrobe" || currentLevel === "location" || currentLevel === "scene";
     // Build a signature from IDs + URLs + reaction count to detect any change
-    const signature = generations.map((g) => `${g.id}:${g.cloud_url || ""}`).join(",") + `|rx:${reactions.length}`;
+    const rxLen = reactions.length;
+    const signature = generations.map((g) => `${g.id}:${g.cloud_url || ""}`).join(",") + `|rx:${rxLen}`;
     if (!isGenLevel) {
       prevGenSignatureRef.current = signature;
       return;

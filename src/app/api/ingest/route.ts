@@ -48,11 +48,11 @@ export async function POST(req: NextRequest) {
 
     // 3. Generate bibles — throttled to avoid API rate limits
     // Process in batches of 3 to stay within token-per-minute limits
-    async function processBatch<T, R>(
+    const processBatch = async <T, R>(
       items: T[],
       fn: (item: T) => Promise<R>,
       batchSize = 3
-    ): Promise<R[]> {
+    ): Promise<R[]> => {
       const results: R[] = [];
       for (let i = 0; i < items.length; i += batchSize) {
         const batch = items.slice(i, i + batchSize);
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
         results.push(...batchResults);
       }
       return results;
-    }
+    };
 
     const characters = await processBatch(extraction.characters, async (char) => {
       const bible = await generateCharacterBible(
