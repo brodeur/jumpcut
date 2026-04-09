@@ -8,9 +8,6 @@ interface GenerateDialogProps {
   objectType: string;
   style?: string;
   onClose: () => void;
-  /** Called immediately with 4 placeholder IDs, then again as each image completes */
-  onGenerateStart: (placeholders: Array<{ id: string; cloud_url: string }>) => void;
-  onGenerateComplete: (generations: Array<{ id: string; cloud_url: string }>) => void;
 }
 
 export function GenerateDialog({
@@ -19,22 +16,23 @@ export function GenerateDialog({
   objectType,
   style,
   onClose,
-  onGenerateStart,
-  onGenerateComplete,
 }: GenerateDialogProps) {
   const [prompt, setPrompt] = useState(defaultPrompt);
 
   const handleGenerate = () => {
     if (!prompt.trim()) return;
 
-    // Create 4 placeholder entries immediately
-    const placeholders = Array.from({ length: 4 }, (_, i) => ({
+    // Create 2 placeholder entries immediately
+    const placeholders = Array.from({ length: 2 }, (_, i) => ({
       id: `pending-${Date.now()}-${i}`,
       cloud_url: "",
     }));
 
-    // Notify parent to show loading cards
-    onGenerateStart(placeholders);
+    // Dispatch start event with placeholders + context
+    console.log("[generate] dispatching jc-generate-start", objectId, objectType);
+    window.dispatchEvent(new CustomEvent("jc-generate-start", {
+      detail: { placeholders, objectId, objectType },
+    }));
 
     // Close dialog immediately
     onClose();
@@ -48,7 +46,7 @@ export function GenerateDialog({
         objectType,
         prompt: prompt.trim(),
         style,
-        count: 4,
+        count: 2,
       }),
     })
       .then((res) => {
@@ -56,8 +54,11 @@ export function GenerateDialog({
         return res.json();
       })
       .then((data) => {
-        // Replace placeholders with real generations
-        onGenerateComplete(data.generations);
+        // Dispatch completion event
+        console.log("[generate] dispatching jc-generate-complete", data.generations.length, "images");
+        window.dispatchEvent(new CustomEvent("jc-generate-complete", {
+          detail: { generations: data.generations, objectId, objectType },
+        }));
 
         // Fire audience evaluation for each (async, don't block)
         for (const gen of data.generations) {
@@ -111,7 +112,7 @@ export function GenerateDialog({
             disabled={!prompt.trim()}
             className="flex-1 py-2 rounded text-ui font-medium transition-colors disabled:opacity-30 bg-jc-red text-jc-text hover:bg-jc-red-hover"
           >
-            Generate 4 Variants
+            Generate Variants
           </button>
         </div>
       </div>

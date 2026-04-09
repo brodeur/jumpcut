@@ -9,6 +9,8 @@ function getSupabaseAdmin() {
   );
 }
 
+export const dynamic = "force-dynamic";
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
@@ -64,15 +66,18 @@ export async function GET(
 
     if (allEntityIds.length > 0) {
       // Fetch all generations and filter by entity IDs in JS
-      // (.in() with many UUIDs can be unreliable via PostgREST)
-      const { data: allGens } = await supabase
+      const { data: allGens, error: genErr } = await supabase
         .from("generations")
         .select("*")
-        .order("created_at");
+        .order("created_at")
+        .limit(5000);
+
+      console.log(`[project/${projectId}] allGens: ${allGens?.length}, err: ${genErr?.message}, entityIds: ${allEntityIds.length}`);
 
       generations = (allGens || []).filter(
         (g: { object_id: string }) => entityIdSet.has(g.object_id)
       );
+      console.log(`[project/${projectId}] filtered gens: ${(generations as unknown[]).length}`);
 
       // Fetch reactions for matched generations
       const genIds = generations.map((g: { id: string }) => g.id);

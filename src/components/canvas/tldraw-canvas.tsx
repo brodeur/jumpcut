@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Tldraw, type Editor, type TldrawOptions, type StateNode, type TLClickEventInfo } from "tldraw";
 import "tldraw/tldraw.css";
 import { customShapeUtils } from "./shapes/shape-utils";
@@ -31,6 +31,7 @@ export default function TldrawCanvas({
   onOpenGenerate,
 }: TldrawCanvasProps) {
   const editorRef = useRef<Editor | null>(null);
+  const [editorReady, setEditorReady] = useState(false);
   const shapesCreatedRef = useRef(false);
   const prevLevelRef = useRef<string>("project");
   const prevCharIdsRef = useRef<string>("");
@@ -97,6 +98,7 @@ export default function TldrawCanvas({
   const handleMount = useCallback(
     (editor: Editor) => {
       editorRef.current = editor;
+      setEditorReady(true);
 
       // Dark background
       editor.user.updateUserPreferences({ colorScheme: "dark" });
@@ -160,10 +162,13 @@ export default function TldrawCanvas({
   const clearCanvas = useCallback(() => {
     const editor = editorRef.current;
     if (!editor) return;
-    const allShapes = editor.getCurrentPageShapes();
-    if (allShapes.length > 0) {
-      editor.deleteShapes(allShapes.map((s) => s.id));
-    }
+    editor.run(() => {
+      editor.selectNone();
+      const allShapes = editor.getCurrentPageShapes();
+      if (allShapes.length > 0) {
+        editor.deleteShapes(allShapes.map((s) => s.id));
+      }
+    });
   }, []);
 
   // Detect project switch: if character IDs change, clear and re-render
@@ -213,7 +218,7 @@ export default function TldrawCanvas({
 
     if (shapes.length > 0) {
       editor.createShapes(shapes);
-      editor.zoomToFit({ animation: { duration: 300 } });
+      editor.zoomToFit();
     }
   }, [characters, locations, scenes, canvasNodes, generations]);
 
@@ -245,7 +250,7 @@ export default function TldrawCanvas({
     }
 
     editor.createShapes(shapes);
-    editor.zoomToFit({ animation: { duration: 200 } });
+    editor.zoomToFit();
   }, [characters, generations, selectNode]);
 
   // Render generation sub-canvas (face, body, wardrobe) — shows generate button + existing generated images
@@ -295,15 +300,15 @@ export default function TldrawCanvas({
     });
 
     editor.createShapes(shapes);
-    editor.zoomToFit({ animation: { duration: 200 } });
+    editor.zoomToFit();
   }, [generations]);
 
   // Create / swap shapes based on current level
   useEffect(() => {
     const editor = editorRef.current;
-    if (!editor) return;
+    if (!editor || !editorReady) return;
 
-    // On first data load at project level
+    // On first data load at project level (or editor just became ready)
     if (currentLevel === "project" && !shapesCreatedRef.current) {
       if (characters.length > 0 || locations.length > 0 || scenes.length > 0) {
         renderProjectCanvas();
@@ -329,21 +334,22 @@ export default function TldrawCanvas({
 
       prevLevelRef.current = currentLevel;
     }
-  }, [currentLevel, characters, locations, scenes, canvasNodes, breadcrumb, clearCanvas, renderProjectCanvas, renderCharacterCanvas, renderGenerationCanvas]);
+  }, [editorReady, currentLevel, characters, locations, scenes, canvasNodes, breadcrumb, clearCanvas, renderProjectCanvas, renderCharacterCanvas, renderGenerationCanvas]);
 
   // Re-render generation canvas when generations change while already on a generation level
-  const prevGenerationsLenRef = useRef(generations.length);
+  const prevGenSignatureRef = useRef("");
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
     const isGenLevel = currentLevel === "face" || currentLevel === "body" || currentLevel === "wardrobe";
+    // Build a signature from IDs + URLs to detect any change (count, content, or URL fill-in)
+    const signature = generations.map((g) => `${g.id}:${g.cloud_url || ""}`).join(",");
     if (!isGenLevel) {
-      prevGenerationsLenRef.current = generations.length;
+      prevGenSignatureRef.current = signature;
       return;
     }
-    // Only re-render if generations count actually changed
-    if (generations.length !== prevGenerationsLenRef.current) {
-      prevGenerationsLenRef.current = generations.length;
+    if (signature !== prevGenSignatureRef.current) {
+      prevGenSignatureRef.current = signature;
       clearCanvas();
       const objectId = breadcrumb[breadcrumb.length - 1]?.objectId;
       if (objectId) renderGenerationCanvas(objectId, currentLevel);

@@ -145,26 +145,39 @@ export default function Home() {
 
   const handleOpenGenerate = useCallback(
     (objectId: string, objectType: string) => {
-      // Find the character's visual description for the default prompt
       const char = characters.find((c) => c.id === objectId);
       const bible = char?.bible as Record<string, unknown> | null;
       const visualDesc = (bible?.visual_description as string) || "";
-      setGenerateDialog({ objectId, objectType, defaultPrompt: visualDesc });
+
+      // Frame the prompt based on generation type
+      let defaultPrompt = visualDesc;
+      if (objectType === "character_face") {
+        defaultPrompt = `Close-up headshot portrait, head and shoulders only, neutral background. ${visualDesc}`;
+      } else if (objectType === "character_body") {
+        defaultPrompt = `Full body portrait, standing pose, neutral background. ${visualDesc}`;
+      }
+
+      setGenerateDialog({ objectId, objectType, defaultPrompt });
     },
     [characters]
   );
 
-  // Phase 1: create placeholder loading cards immediately
-  const handleGenerateStart = useCallback(
-    (placeholders: Array<{ id: string; cloud_url: string }>) => {
-      const objectType = (generateDialog?.objectType || "character_face") as Generation["object_type"];
+  // Ref for refresh to avoid stale closure
+  const refreshRef = useRef(projectData.refresh);
+  refreshRef.current = projectData.refresh;
+
+  // Listen for generate events from the dialog (uses window events to avoid stale closures)
+  useEffect(() => {
+    const handleStart = (e: Event) => {
+      console.log("[page] received jc-generate-start");
+      const { placeholders, objectId, objectType } = (e as CustomEvent).detail;
       setNewGenerations((prev) => [
         ...prev,
-        ...placeholders.map((g): Generation => ({
+        ...placeholders.map((g: { id: string }): Generation => ({
           id: g.id,
-          cloud_url: "", // empty = loading state
-          object_id: generateDialog?.objectId || "",
-          object_type: objectType,
+          cloud_url: "",
+          object_id: objectId,
+          object_type: objectType as Generation["object_type"],
           prompt: "",
           local_path: null,
           local_synced: false,
@@ -173,22 +186,18 @@ export default function Home() {
           created_at: new Date().toISOString(),
         })),
       ]);
-    },
-    [generateDialog]
-  );
+    };
 
-  // Phase 2: replace placeholders with real generations
-  const handleGenerateComplete = useCallback(
-    (realGens: Array<{ id: string; cloud_url: string }>) => {
-      const objectType = (generateDialog?.objectType || "character_face") as Generation["object_type"];
-      // Remove placeholders (pending-*) and add real generations
+    const handleComplete = (e: Event) => {
+      console.log("[page] received jc-generate-complete");
+      const { generations: realGens, objectId, objectType } = (e as CustomEvent).detail;
       setNewGenerations((prev) => [
         ...prev.filter((g) => !g.id.startsWith("pending-")),
-        ...realGens.map((g): Generation => ({
+        ...realGens.map((g: { id: string; cloud_url: string }): Generation => ({
           id: g.id,
           cloud_url: g.cloud_url,
-          object_id: generateDialog?.objectId || "",
-          object_type: objectType,
+          object_id: objectId,
+          object_type: objectType as Generation["object_type"],
           prompt: "",
           local_path: null,
           local_synced: false,
@@ -198,13 +207,23 @@ export default function Home() {
         })),
       ]);
 
-      // Poll for reactions
-      [5000, 15000, 30000].forEach((delay) => {
-        setTimeout(() => projectData.refresh(), delay);
+      // Refresh immediately to pick up new generations from DB
+      refreshRef.current();
+
+      // Poll for reactions — evaluations take ~10-30s
+      [10000, 25000, 45000].forEach((delay) => {
+        setTimeout(() => refreshRef.current(), delay);
       });
-    },
-    [generateDialog, projectData]
-  );
+    };
+
+    window.addEventListener("jc-generate-start", handleStart);
+    window.addEventListener("jc-generate-complete", handleComplete);
+    return () => {
+      window.removeEventListener("jc-generate-start", handleStart);
+      window.removeEventListener("jc-generate-complete", handleComplete);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleStar = useCallback(
     async (generationId: string) => {
@@ -229,8 +248,6 @@ export default function Home() {
           defaultPrompt={generateDialog.defaultPrompt}
           style={projectId ? localStorage.getItem(`jc_style_${projectId}`) || "35mm film" : "35mm film"}
           onClose={() => setGenerateDialog(null)}
-          onGenerateStart={handleGenerateStart}
-          onGenerateComplete={handleGenerateComplete}
         />
       )}
       <div className="h-screen flex flex-col">
