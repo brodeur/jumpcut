@@ -115,68 +115,70 @@ export async function POST(req: NextRequest) {
       return { segment, reaction };
     });
 
-    // TRIBE v2 neural evaluation (parallel with Claude, non-blocking)
-    const tribePromise = (async () => {
-      const tribeUrl = process.env.TRIBE_API_URL;
-      if (!tribeUrl || !gen.cloud_url) return null;
+    // TRIBE v2 neural evaluation — fire and forget
+    // Runs independently, saves to DB when done. Does not block the response.
+    const tribeUrl = process.env.TRIBE_API_URL;
+    if (tribeUrl && gen.cloud_url) {
+      // Use a self-contained async function that handles its own Supabase client
+      (async () => {
+        try {
+          const resp = await fetch(tribeUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ image_url: gen.cloud_url }),
+            signal: AbortSignal.timeout(170000), // 170s — covers cold start + inference
+          });
 
-      try {
-        const resp = await fetch(tribeUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image_url: gen.cloud_url }),
-        });
+          if (!resp.ok) {
+            console.error("TRIBE error:", resp.status);
+            return;
+          }
 
-        if (!resp.ok) {
-          console.error("TRIBE error:", resp.status, await resp.text());
-          return null;
+          const tribeResult = await resp.json();
+
+          const neuralReaction = {
+            ...tribeResult.scores,
+            overall_engagement: tribeResult.overall_engagement,
+            instant_reaction: `Neural prediction: overall engagement ${tribeResult.overall_engagement}/10`,
+            trust_score: tribeResult.scores.face_recognition ?? 5,
+            distinctiveness: tribeResult.scores.visual_salience ?? 5,
+            compulsion_score: tribeResult.scores.reward_anticipation ?? 5,
+            anticipation_load: tribeResult.scores.cognitive_attention ?? 5,
+            would_watch: (tribeResult.overall_engagement ?? 5) >= 5,
+            character_truth: `Emotional arousal: ${tribeResult.scores.emotional_arousal}/10, Narrative engagement: ${tribeResult.scores.narrative_engagement}/10`,
+            cost_felt: "",
+            evangelist_moment: null,
+          };
+
+          // Use a fresh Supabase client since the original request may be done
+          const { createClient: createSB } = await import("@supabase/supabase-js");
+          const sb = createSB(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!
+          );
+
+          const { error } = await sb.from("audience_reactions").upsert(
+            {
+              generation_id: generationId,
+              segment: "neural",
+              reaction: neuralReaction,
+              demographic_profile: { type: "tribe_v2", model: "facebook/tribev2" },
+            },
+            { onConflict: "generation_id,segment" }
+          );
+
+          if (error) console.error("TRIBE save error:", error);
+          else console.log(`[TRIBE] Neural evaluation saved for ${generationId}`);
+        } catch (err) {
+          console.error("TRIBE evaluation failed (fire-and-forget):", err);
         }
+      })();
+    }
 
-        const tribeResult = await resp.json();
+    // Wait for Claude only — return immediately
+    const claudeReactions = await Promise.all(claudePromises);
 
-        // Save neural scores as a reaction with segment="neural"
-        const neuralReaction = {
-          ...tribeResult.scores,
-          overall_engagement: tribeResult.overall_engagement,
-          instant_reaction: `Neural prediction: overall engagement ${tribeResult.overall_engagement}/10`,
-          trust_score: tribeResult.scores.face_recognition ?? 5,
-          distinctiveness: tribeResult.scores.visual_salience ?? 5,
-          compulsion_score: tribeResult.scores.reward_anticipation ?? 5,
-          anticipation_load: tribeResult.scores.cognitive_attention ?? 5,
-          would_watch: (tribeResult.overall_engagement ?? 5) >= 5,
-          character_truth: `Emotional arousal: ${tribeResult.scores.emotional_arousal}/10, Narrative engagement: ${tribeResult.scores.narrative_engagement}/10`,
-          cost_felt: "",
-          evangelist_moment: null,
-        };
-
-        const { error } = await supabase.from("audience_reactions").upsert(
-          {
-            generation_id: generationId,
-            segment: "neural",
-            reaction: neuralReaction,
-            demographic_profile: { type: "tribe_v2", model: "facebook/tribev2" },
-          },
-          { onConflict: "generation_id,segment" }
-        );
-
-        if (error) console.error("TRIBE save error:", error);
-        return { segment: "neural", reaction: neuralReaction };
-      } catch (err) {
-        console.error("TRIBE evaluation failed:", err);
-        return null;
-      }
-    })();
-
-    // Wait for all evaluations
-    const [claudeReactions, tribeReaction] = await Promise.all([
-      Promise.all(claudePromises),
-      tribePromise,
-    ]);
-
-    const reactions = [...claudeReactions];
-    if (tribeReaction) reactions.push(tribeReaction);
-
-    return NextResponse.json({ reactions });
+    return NextResponse.json({ reactions: claudeReactions });
   } catch (error) {
     console.error("Evaluation error:", error);
     return NextResponse.json(

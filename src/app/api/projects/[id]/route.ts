@@ -5,7 +5,12 @@ function getSupabaseAdmin() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false, autoRefreshToken: false } }
+    {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: {
+        fetch: (url, init) => fetch(url, { ...init, cache: "no-store" }),
+      },
+    }
   );
 }
 
@@ -66,9 +71,11 @@ export async function GET(
 
     if (allEntityIds.length > 0) {
       // Fetch all generations and filter by entity IDs in JS
+      // Use gte on created_at to bust any query cache
       const { data: allGens, error: genErr } = await supabase
         .from("generations")
         .select("*")
+        .gte("created_at", "2000-01-01")
         .order("created_at")
         .limit(5000);
 

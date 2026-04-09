@@ -33,8 +33,8 @@ model_volume = modal.Volume.from_name("tribe-model-cache", create_if_missing=Tru
 @app.cls(
     gpu="T4",
     volumes={"/cache": model_volume},
-    scaledown_window=300,
-    timeout=120,
+    scaledown_window=1800,  # 30 min idle before shutdown
+    timeout=180,
 )
 class TribeService:
     @modal.enter()
@@ -149,8 +149,8 @@ class TribeService:
     image=tribe_image,
     gpu="T4",
     volumes={"/cache": model_volume},
-    scaledown_window=300,
-    timeout=120,
+    scaledown_window=1800,
+    timeout=180,
 )
 @modal.fastapi_endpoint(method="POST")
 def predict(data: dict):
