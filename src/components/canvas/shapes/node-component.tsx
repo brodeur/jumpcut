@@ -1,3 +1,4 @@
+import { User, MapPin, Clapperboard, Star } from "lucide-react";
 import type { NodeStatus } from "@/lib/types";
 
 const STATUS_BORDER: Record<NodeStatus, string> = {
@@ -8,10 +9,10 @@ const STATUS_BORDER: Record<NodeStatus, string> = {
   starred: "border-solid border-[#CC3300]",
 };
 
-const TYPE_LABELS: Record<string, { label: string; color: string }> = {
-  character: { label: "CHR", color: "#CC3300" },
-  location: { label: "LOC", color: "#2A6B3C" },
-  scene: { label: "SCN", color: "#8A6200" },
+const TYPE_CONFIG: Record<string, { label: string; color: string; Icon: typeof User }> = {
+  character: { label: "CHR", color: "#CC3300", Icon: User },
+  location: { label: "LOC", color: "#2A6B3C", Icon: MapPin },
+  scene: { label: "SCN", color: "#8A6200", Icon: Clapperboard },
 };
 
 interface NodeComponentProps {
@@ -31,8 +32,9 @@ export function NodeComponent({
   w,
   h,
 }: NodeComponentProps) {
-  const typeInfo = TYPE_LABELS[nodeType];
+  const typeInfo = TYPE_CONFIG[nodeType];
   const starred = status === "starred";
+  const IconEl = typeInfo.Icon;
 
   return (
     <div
@@ -49,11 +51,7 @@ export function NodeComponent({
             className="w-full h-full object-cover"
           />
         ) : (
-          <span
-            style={{ color: typeInfo.color, fontSize: 22, fontWeight: 700 }}
-          >
-            {typeInfo.label}
-          </span>
+          <IconEl size={32} color={typeInfo.color} strokeWidth={1.5} />
         )}
       </div>
 
@@ -63,7 +61,7 @@ export function NodeComponent({
         style={{ background: "#222220" }}
       >
         {starred && (
-          <span style={{ color: "#CC3300", fontSize: 11 }}>★</span>
+          <Star size={11} color="#CC3300" fill="#CC3300" />
         )}
         <span
           style={{
@@ -77,17 +75,7 @@ export function NodeComponent({
         >
           {name}
         </span>
-        <span
-          style={{
-            fontSize: 9,
-            color: typeInfo.color,
-            opacity: 0.7,
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-          }}
-        >
-          {typeInfo.label}
-        </span>
+        <IconEl size={10} color={typeInfo.color} strokeWidth={1.5} style={{ opacity: 0.7 }} />
       </div>
     </div>
   );

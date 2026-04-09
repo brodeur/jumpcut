@@ -194,7 +194,11 @@ export default function TldrawCanvas({
     characters.forEach((c) => {
       const pos = posMap.get(c.id) ?? { x: (idx % GRID_COLS) * SPACING_X, y: Math.floor(idx / GRID_COLS) * SPACING_Y };
       idx++;
-      shapes.push({ type: CHARACTER_NODE_TYPE, x: pos.x, y: pos.y, props: { w: 220, h: 160, name: c.name, status: c.status, objectId: c.id, thumbnailUrl: "" } });
+      // Find starred face for this character
+      const starredFace = generations.find(
+        (g) => g.object_id === c.id && g.object_type === "character_face" && g.starred && g.cloud_url
+      );
+      shapes.push({ type: CHARACTER_NODE_TYPE, x: pos.x, y: pos.y, props: { w: 220, h: 160, name: c.name, status: c.status, objectId: c.id, thumbnailUrl: starredFace?.cloud_url || "" } });
     });
     locations.forEach((l) => {
       const pos = posMap.get(l.id) ?? { x: (idx % GRID_COLS) * SPACING_X, y: Math.floor(idx / GRID_COLS) * SPACING_Y };
@@ -211,7 +215,7 @@ export default function TldrawCanvas({
       editor.createShapes(shapes);
       editor.zoomToFit({ animation: { duration: 300 } });
     }
-  }, [characters, locations, scenes, canvasNodes]);
+  }, [characters, locations, scenes, canvasNodes, generations]);
 
   // Render character sub-canvas (Bible, Face, Body, Wardrobe cards)
   const renderCharacterCanvas = useCallback((characterId: string) => {
@@ -219,8 +223,14 @@ export default function TldrawCanvas({
     if (!editor) return;
 
     const char = characters.find((c) => c.id === characterId);
-    const hasStarredFace = false; // TODO: check generations table
-    const hasStarredBody = false;
+    const starredFace = generations.find(
+      (g) => g.object_id === characterId && g.object_type === "character_face" && g.starred
+    );
+    const starredBody = generations.find(
+      (g) => g.object_id === characterId && g.object_type === "character_body" && g.starred
+    );
+    const hasStarredFace = !!starredFace;
+    const hasStarredBody = !!starredBody;
 
     const shapes: Parameters<Editor["createShapes"]>[0] = [
       { type: CARD_NODE_TYPE, x: 0, y: 0, props: { w: 200, h: 120, label: "Character Bible", kind: "bible", locked: false, objectId: characterId } },
@@ -236,7 +246,7 @@ export default function TldrawCanvas({
 
     editor.createShapes(shapes);
     editor.zoomToFit({ animation: { duration: 200 } });
-  }, [characters, selectNode]);
+  }, [characters, generations, selectNode]);
 
   // Render generation sub-canvas (face, body, wardrobe) — shows generate button + existing generated images
   const renderGenerationCanvas = useCallback((objectId: string, level: string) => {

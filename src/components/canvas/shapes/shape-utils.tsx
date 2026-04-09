@@ -242,12 +242,28 @@ export class SceneNodeUtil extends ShapeUtil<SceneShape> {
 
 type CardShape = TLShape<typeof CARD_NODE_TYPE>;
 
-const CARD_KIND_STYLES: Record<string, { icon: string; color: string }> = {
-  bible: { icon: "📖", color: "#F0EDE8" },
-  face: { icon: "👤", color: "#CC3300" },
-  body: { icon: "🧍", color: "#CC3300" },
-  wardrobe: { icon: "👔", color: "#CC3300" },
-  generate: { icon: "+", color: "#CC3300" },
+// Lucide icon names mapped to card kinds (rendered inline as SVG strings for tldraw HTMLContainer)
+const CARD_KIND_CONFIG: Record<string, { color: string; svgPath: string }> = {
+  bible: {
+    color: "#F0EDE8",
+    svgPath: '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20" stroke="currentColor" stroke-width="1.5" fill="none"/>',
+  },
+  face: {
+    color: "#CC3300",
+    svgPath: '<circle cx="12" cy="8" r="5" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M20 21a8 8 0 0 0-16 0" stroke="currentColor" stroke-width="1.5" fill="none"/>',
+  },
+  body: {
+    color: "#CC3300",
+    svgPath: '<circle cx="12" cy="5" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M12 7v6m-4 4 4-4 4 4M8 13h8" stroke="currentColor" stroke-width="1.5" fill="none"/>',
+  },
+  wardrobe: {
+    color: "#CC3300",
+    svgPath: '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="m8 10 4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none"/>',
+  },
+  generate: {
+    color: "#CC3300",
+    svgPath: '<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M12 8v8m-4-4h8" stroke="currentColor" stroke-width="1.5" fill="none"/>',
+  },
 };
 
 export class CardNodeUtil extends ShapeUtil<CardShape> {
@@ -273,7 +289,7 @@ export class CardNodeUtil extends ShapeUtil<CardShape> {
   }
 
   component(shape: CardShape) {
-    const style = CARD_KIND_STYLES[shape.props.kind] ?? CARD_KIND_STYLES.bible;
+    const cfg = CARD_KIND_CONFIG[shape.props.kind] ?? CARD_KIND_CONFIG.bible;
     const locked = shape.props.locked;
     return (
       <HTMLContainer>
@@ -291,14 +307,18 @@ export class CardNodeUtil extends ShapeUtil<CardShape> {
             gap: 6,
             opacity: locked ? 0.4 : 1,
             userSelect: "none",
+            color: cfg.color,
           }}
         >
-          <span style={{ fontSize: 28 }}>{style.icon}</span>
-          <span style={{ fontSize: 12, color: style.color, fontWeight: 500 }}>
+          <svg width="28" height="28" viewBox="0 0 24 24" dangerouslySetInnerHTML={{ __html: cfg.svgPath }} />
+          <span style={{ fontSize: 12, color: cfg.color, fontWeight: 500 }}>
             {shape.props.label}
           </span>
           {locked && (
-            <span style={{ fontSize: 9, color: "rgba(240,237,232,0.3)" }}>🔒 Locked</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9, color: "rgba(240,237,232,0.3)" }}>
+              <svg width="10" height="10" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" stroke="currentColor" strokeWidth="2" fill="none"/><path d="M7 11V7a5 5 0 0 1 10 0v4" stroke="currentColor" strokeWidth="2" fill="none"/></svg>
+              Locked
+            </div>
           )}
         </div>
       </HTMLContainer>
