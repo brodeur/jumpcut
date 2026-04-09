@@ -22,11 +22,9 @@ function breadcrumbToPath(crumbs: BreadcrumbItem[]): string {
 interface CanvasProviderProps {
   children: React.ReactNode;
   projectName?: string;
-  /** Called when URL parsing resolves a project slug — parent should load that project */
-  onResolveProject?: (projectId: string) => void;
 }
 
-export function CanvasProvider({ children, projectName, onResolveProject }: CanvasProviderProps) {
+export function CanvasProvider({ children, projectName }: CanvasProviderProps) {
   const [currentLevel, setCurrentLevel] = useState<CanvasLevel>("project");
   const [breadcrumb, setBreadcrumb] = useState<BreadcrumbItem[]>([
     { label: "Untitled Project", level: "project" },

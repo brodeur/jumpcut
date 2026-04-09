@@ -84,7 +84,6 @@ export default function Home() {
 
   // Resolve URL path to canvas state once project data loads
   const urlResolved = useRef(false);
-  const canvasRef = useRef<{ drillDown: (level: string, id: string, label: string) => void } | null>(null);
 
   useEffect(() => {
     if (urlResolved.current || !projectData.project || characters.length === 0) return;

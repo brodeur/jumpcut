@@ -40,13 +40,13 @@ const LOCATION_CHILDREN = [
 function TreeItem({
   item,
   entityLevel,
-  children,
+  subItems,
   selectedId,
   onNavigate,
 }: {
   item: NodeItem;
   entityLevel: CanvasLevel;
-  children: Array<{ label: string; kind?: string; level?: CanvasLevel }>;
+  subItems: Array<{ label: string; kind?: string; level?: CanvasLevel }>;
   selectedId: string | null;
   onNavigate: (levels: Array<{ level: CanvasLevel; id: string; label: string }>) => void;
 }) {
@@ -84,7 +84,7 @@ function TreeItem({
       {/* Sub-items */}
       {expanded && (
         <div className="ml-3">
-          {children.map((child) => (
+          {subItems.map((child) => (
             <button
               key={child.label}
               onClick={() => {
@@ -143,7 +143,7 @@ export function NodeBrowser({
   locations,
   scenes,
 }: NodeBrowserProps) {
-  const { selectedNodeId, selectNode, drillDown, navigateTo, breadcrumb } = useCanvas();
+  const { selectedNodeId, selectNode, drillDown, navigateTo } = useCanvas();
 
   // Navigate to a specific path: reset to root then drill to target
   const handleNavigate = (levels: Array<{ level: CanvasLevel; id: string; label: string }>) => {
@@ -173,7 +173,7 @@ export function NodeBrowser({
             key={c.id}
             item={c}
             entityLevel="character"
-            children={CHARACTER_CHILDREN}
+            subItems={CHARACTER_CHILDREN}
             selectedId={selectedNodeId}
             onNavigate={handleNavigate}
           />
@@ -189,7 +189,7 @@ export function NodeBrowser({
             key={l.id}
             item={l}
             entityLevel="location"
-            children={LOCATION_CHILDREN}
+            subItems={LOCATION_CHILDREN}
             selectedId={selectedNodeId}
             onNavigate={handleNavigate}
           />
