@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Backgrounds */
+  --jc-bg: #111110;
+  --jc-surface: #1A1917;
+  --jc-raised: #222220;
+
+  /* Borders */
+  --jc-border: rgba(255, 255, 255, 0.08);
+  --jc-border-em: rgba(255, 255, 255, 0.16);
+
+  /* Text */
+  --jc-text: #F0EDE8;
+  --jc-text-2: rgba(240, 237, 232, 0.55);
+  --jc-text-3: rgba(240, 237, 232, 0.30);
+
+  /* Accent */
+  --jc-red: #CC3300;
+  --jc-red-hover: #E03820;
+  --jc-red-muted: rgba(204, 51, 0, 0.15);
+  --jc-star: #CC3300;
+  --jc-confirm: #2A6B3C;
+  --jc-warn: #8A6200;
+}
+
+body {
+  color: var(--jc-text);
+  background: var(--jc-bg);
+  font-family: Inter, system-ui, sans-serif;
+  overflow: hidden;
+}
+
+/* Scrollbar styling for dark theme */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--jc-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--jc-border-em);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
