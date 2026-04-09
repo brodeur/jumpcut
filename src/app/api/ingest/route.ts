@@ -16,7 +16,7 @@ function getSupabaseAdmin() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { scriptText, projectName, userId } = await req.json();
+    const { scriptText, projectName, visualStyle, userId } = await req.json();
 
     if (!scriptText || !userId) {
       return NextResponse.json(
@@ -183,6 +183,7 @@ export async function POST(req: NextRequest) {
       projectId: project.id,
       title: extraction.title,
       summary: extraction.summary,
+      visualStyle: visualStyle || "35mm film",
       characterCount: characters.length,
       locationCount: locations.length,
       sceneCount: scenes.length,

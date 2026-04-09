@@ -4,7 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 function getSupabaseAdmin() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false, autoRefreshToken: false } }
   );
 }
 
@@ -16,6 +17,7 @@ export async function GET(
     const supabase = getSupabaseAdmin();
     const projectId = params.id;
 
+    // Get all entity IDs for this project to query generations
     const [
       { data: project, error: projectError },
       { data: characters },
@@ -48,12 +50,50 @@ export async function GET(
 
     if (projectError) throw projectError;
 
+    // Fetch generations for all entities in this project
+    const allEntityIds = [
+      ...(characters || []).map((c: { id: string }) => c.id),
+      ...(locations || []).map((l: { id: string }) => l.id),
+      ...(scenes || []).map((s: { id: string }) => s.id),
+    ];
+
+    let generations: unknown[] = [];
+    let reactions: unknown[] = [];
+
+    const entityIdSet = new Set(allEntityIds);
+
+    if (allEntityIds.length > 0) {
+      // Fetch all generations and filter by entity IDs in JS
+      // (.in() with many UUIDs can be unreliable via PostgREST)
+      const { data: allGens } = await supabase
+        .from("generations")
+        .select("*")
+        .order("created_at");
+
+      generations = (allGens || []).filter(
+        (g: { object_id: string }) => entityIdSet.has(g.object_id)
+      );
+
+      // Fetch reactions for matched generations
+      const genIds = generations.map((g: { id: string }) => g.id);
+      if (genIds.length > 0) {
+        const { data: rxns } = await supabase
+          .from("audience_reactions")
+          .select("*")
+          .in("generation_id", genIds)
+          .order("created_at");
+        reactions = rxns || [];
+      }
+    }
+
     return NextResponse.json({
       project,
       characters: characters || [],
       locations: locations || [],
       scenes: scenes || [],
       canvasNodes: canvasNodes || [],
+      generations,
+      reactions,
     });
   } catch (error) {
     console.error("Fetch project error:", error);

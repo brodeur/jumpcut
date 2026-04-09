@@ -9,7 +9,7 @@ export type ObjectType =
   | "scene"
   | "wardrobe";
 
-export type AudienceSegment = "converter" | "evangelist" | "skeptic" | "genre_native";
+export type AudienceSegment = "converter" | "evangelist" | "skeptic" | "genre_native" | "neural";
 
 export type CanvasLevel =
   | "project"

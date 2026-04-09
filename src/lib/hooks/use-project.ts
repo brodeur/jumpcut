@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import type { Character, Location, Scene, CanvasNode } from "@/lib/types";
+import type { Character, Location, Scene, CanvasNode, Generation, AudienceReaction } from "@/lib/types";
 
 interface ProjectData {
   project: { id: string; name: string; script_text: string | null } | null;
@@ -9,6 +9,8 @@ interface ProjectData {
   locations: Location[];
   scenes: Scene[];
   canvasNodes: CanvasNode[];
+  generations: Generation[];
+  reactions: AudienceReaction[];
   loading: boolean;
   error: string | null;
   refresh: () => void;
@@ -20,6 +22,8 @@ export function useProject(projectId: string | null): ProjectData {
   const [locations, setLocations] = useState<Location[]>([]);
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [canvasNodes, setCanvasNodes] = useState<CanvasNode[]>([]);
+  const [generations, setGenerations] = useState<Generation[]>([]);
+  const [reactions, setReactions] = useState<AudienceReaction[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,6 +42,8 @@ export function useProject(projectId: string | null): ProjectData {
       setLocations(data.locations);
       setScenes(data.scenes);
       setCanvasNodes(data.canvasNodes);
+      setGenerations(data.generations || []);
+      setReactions(data.reactions || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -55,6 +61,8 @@ export function useProject(projectId: string | null): ProjectData {
     locations,
     scenes,
     canvasNodes,
+    generations,
+    reactions,
     loading,
     error,
     refresh: fetchProject,

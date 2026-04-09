@@ -6,9 +6,18 @@ interface ScriptDialogProps {
   onIngest: (projectId: string) => void;
 }
 
+const VISUAL_STYLES = [
+  { value: "35mm film", label: "35mm Film" },
+  { value: "IMAX 70mm", label: "IMAX" },
+  { value: "anime cel animation", label: "Anime" },
+  { value: "digital cinema (RED Monstro 8K)", label: "Digital Cinema" },
+  { value: "3D CGI render (photorealistic)", label: "3D CGI" },
+] as const;
+
 export function ScriptDialog({ onIngest }: ScriptDialogProps) {
   const [scriptText, setScriptText] = useState("");
   const [projectName, setProjectName] = useState("");
+  const [visualStyle, setVisualStyle] = useState(VISUAL_STYLES[0].value);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
 
@@ -24,6 +33,7 @@ export function ScriptDialog({ onIngest }: ScriptDialogProps) {
         body: JSON.stringify({
           scriptText: scriptText.trim(),
           projectName: projectName.trim() || undefined,
+          visualStyle,
           // TODO: Replace with real auth user ID
           userId: "00000000-0000-0000-0000-000000000000",
         }),
@@ -35,6 +45,10 @@ export function ScriptDialog({ onIngest }: ScriptDialogProps) {
       }
 
       const data = await res.json();
+      // Persist visual style for this project
+      if (data.projectId) {
+        localStorage.setItem(`jc_style_${data.projectId}`, visualStyle);
+      }
       setStatus(
         `Done! ${data.characterCount} characters, ${data.locationCount} locations, ${data.sceneCount} scenes`
       );
@@ -69,6 +83,29 @@ export function ScriptDialog({ onIngest }: ScriptDialogProps) {
           className="w-full bg-jc-raised border border-jc-border rounded px-3 py-2 text-ui text-jc-text placeholder:text-jc-text-3 focus:outline-none focus:border-jc-border-em mb-3"
           disabled={loading}
         />
+
+        {/* Visual Style */}
+        <div className="mb-3">
+          <div className="text-micro uppercase tracking-widest text-jc-text-3 mb-1.5">
+            Visual Style
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {VISUAL_STYLES.map((s) => (
+              <button
+                key={s.value}
+                onClick={() => setVisualStyle(s.value)}
+                disabled={loading}
+                className={`px-3 py-1.5 rounded text-meta transition-colors ${
+                  visualStyle === s.value
+                    ? "bg-jc-red text-jc-text"
+                    : "bg-jc-raised border border-jc-border text-jc-text-2 hover:text-jc-text"
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <textarea
           value={scriptText}

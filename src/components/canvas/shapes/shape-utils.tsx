@@ -360,8 +360,18 @@ export class GenImageNodeUtil extends ShapeUtil<GenImageShape> {
               style={{ width: "100%", height: "100%", objectFit: "cover" }}
             />
           ) : (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "rgba(240,237,232,0.3)", fontSize: 13 }}>
-              Generating...
+            <div style={{
+              width: "100%",
+              height: "100%",
+              background: "linear-gradient(90deg, #1A1917 25%, #222220 50%, #1A1917 75%)",
+              backgroundSize: "200% 100%",
+              animation: "shimmer 1.5s infinite",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}>
+              <style>{`@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
+              <span style={{ color: "rgba(240,237,232,0.3)", fontSize: 11 }}>Generating...</span>
             </div>
           )}
           {starred && (

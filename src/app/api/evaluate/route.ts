@@ -78,8 +78,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Fan out to all 4 segments in parallel
-    const evaluationPromises = SEGMENTS.map(async (segment) => {
+    // Fan out to all 4 Claude persona segments in parallel
+    const claudePromises = SEGMENTS.map(async (segment) => {
       const response = await anthropic.messages.create({
         model: "claude-sonnet-4-20250514",
         max_tokens: 1000,
@@ -115,7 +115,66 @@ export async function POST(req: NextRequest) {
       return { segment, reaction };
     });
 
-    const reactions = await Promise.all(evaluationPromises);
+    // TRIBE v2 neural evaluation (parallel with Claude, non-blocking)
+    const tribePromise = (async () => {
+      const tribeUrl = process.env.TRIBE_API_URL;
+      if (!tribeUrl || !gen.cloud_url) return null;
+
+      try {
+        const resp = await fetch(tribeUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image_url: gen.cloud_url }),
+        });
+
+        if (!resp.ok) {
+          console.error("TRIBE error:", resp.status, await resp.text());
+          return null;
+        }
+
+        const tribeResult = await resp.json();
+
+        // Save neural scores as a reaction with segment="neural"
+        const neuralReaction = {
+          ...tribeResult.scores,
+          overall_engagement: tribeResult.overall_engagement,
+          instant_reaction: `Neural prediction: overall engagement ${tribeResult.overall_engagement}/10`,
+          trust_score: tribeResult.scores.face_recognition ?? 5,
+          distinctiveness: tribeResult.scores.visual_salience ?? 5,
+          compulsion_score: tribeResult.scores.reward_anticipation ?? 5,
+          anticipation_load: tribeResult.scores.cognitive_attention ?? 5,
+          would_watch: (tribeResult.overall_engagement ?? 5) >= 5,
+          character_truth: `Emotional arousal: ${tribeResult.scores.emotional_arousal}/10, Narrative engagement: ${tribeResult.scores.narrative_engagement}/10`,
+          cost_felt: "",
+          evangelist_moment: null,
+        };
+
+        const { error } = await supabase.from("audience_reactions").upsert(
+          {
+            generation_id: generationId,
+            segment: "neural",
+            reaction: neuralReaction,
+            demographic_profile: { type: "tribe_v2", model: "facebook/tribev2" },
+          },
+          { onConflict: "generation_id,segment" }
+        );
+
+        if (error) console.error("TRIBE save error:", error);
+        return { segment: "neural", reaction: neuralReaction };
+      } catch (err) {
+        console.error("TRIBE evaluation failed:", err);
+        return null;
+      }
+    })();
+
+    // Wait for all evaluations
+    const [claudeReactions, tribeReaction] = await Promise.all([
+      Promise.all(claudePromises),
+      tribePromise,
+    ]);
+
+    const reactions = [...claudeReactions];
+    if (tribeReaction) reactions.push(tribeReaction);
 
     return NextResponse.json({ reactions });
   } catch (error) {
