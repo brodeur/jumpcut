@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { Character, Location, Scene, CanvasNode, Generation } from "@/lib/types";
+import type { Character, Location, Scene, CanvasNode, Generation, AudienceReaction } from "@/lib/types";
 
 const TldrawCanvas = dynamic(() => import("./tldraw-canvas"), { ssr: false });
 
@@ -11,6 +11,7 @@ interface CanvasPanelProps {
   scenes?: Scene[];
   canvasNodes?: CanvasNode[];
   generations?: Generation[];
+  reactions?: AudienceReaction[];
   onOpenGenerate?: (objectId: string, objectType: string) => void;
 }
 
@@ -20,6 +21,7 @@ export function CanvasPanel({
   scenes = [],
   canvasNodes = [],
   generations = [],
+  reactions = [],
   onOpenGenerate,
 }: CanvasPanelProps) {
   return (
@@ -30,6 +32,7 @@ export function CanvasPanel({
         scenes={scenes}
         canvasNodes={canvasNodes}
         generations={generations}
+        reactions={reactions}
         onOpenGenerate={onOpenGenerate}
       />
     </div>

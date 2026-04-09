@@ -145,21 +145,37 @@ export default function Home() {
 
   const handleOpenGenerate = useCallback(
     (objectId: string, objectType: string) => {
-      const char = characters.find((c) => c.id === objectId);
-      const bible = char?.bible as Record<string, unknown> | null;
-      const visualDesc = (bible?.visual_description as string) || "";
+      let defaultPrompt = "";
 
-      // Frame the prompt based on generation type
-      let defaultPrompt = visualDesc;
       if (objectType === "character_face") {
+        const char = characters.find((c) => c.id === objectId);
+        const bible = char?.bible as Record<string, unknown> | null;
+        const visualDesc = (bible?.visual_description as string) || "";
         defaultPrompt = `Close-up headshot portrait, head and shoulders only, neutral background. ${visualDesc}`;
       } else if (objectType === "character_body") {
+        const char = characters.find((c) => c.id === objectId);
+        const bible = char?.bible as Record<string, unknown> | null;
+        const visualDesc = (bible?.visual_description as string) || "";
         defaultPrompt = `Full body portrait, standing pose, neutral background. ${visualDesc}`;
+      } else if (objectType === "location") {
+        const loc = locations.find((l) => l.id === objectId);
+        const bible = loc?.bible as Record<string, unknown> | null;
+        const visualDesc = (bible?.visual_description as string) || "";
+        defaultPrompt = `Wide establishing shot, cinematic composition. ${visualDesc}`;
+      } else if (objectType === "scene") {
+        const scene = scenes.find((s) => s.id === objectId);
+        const desc = scene?.description || "";
+        // Include starred character faces and location in scene prompt
+        const charNames = characters
+          .filter((c) => scene?.character_ids?.includes(c.id))
+          .map((c) => c.name);
+        const loc = locations.find((l) => l.id === scene?.location_id);
+        defaultPrompt = `Cinematic scene still. ${desc}. Characters present: ${charNames.join(", ") || "unknown"}. Location: ${loc?.name || "unknown"}.`;
       }
 
       setGenerateDialog({ objectId, objectType, defaultPrompt });
     },
-    [characters]
+    [characters, locations, scenes]
   );
 
   // Ref for refresh to avoid stale closure
@@ -283,6 +299,7 @@ export default function Home() {
             scenes={scenes}
             canvasNodes={canvasNodes}
             generations={generations}
+            reactions={reactions}
             onOpenGenerate={handleOpenGenerate}
           />
           <InspectorPanel

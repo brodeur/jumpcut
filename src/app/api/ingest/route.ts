@@ -46,9 +46,23 @@ export async function POST(req: NextRequest) {
     // Truncate script for bible context (first 4000 chars)
     const scriptContext = scriptText.slice(0, 4000);
 
-    // 3. Generate bibles and save entities in parallel
-    // Process characters
-    const characterPromises = extraction.characters.map(async (char) => {
+    // 3. Generate bibles — throttled to avoid API rate limits
+    // Process in batches of 3 to stay within token-per-minute limits
+    async function processBatch<T, R>(
+      items: T[],
+      fn: (item: T) => Promise<R>,
+      batchSize = 3
+    ): Promise<R[]> {
+      const results: R[] = [];
+      for (let i = 0; i < items.length; i += batchSize) {
+        const batch = items.slice(i, i + batchSize);
+        const batchResults = await Promise.all(batch.map(fn));
+        results.push(...batchResults);
+      }
+      return results;
+    }
+
+    const characters = await processBatch(extraction.characters, async (char) => {
       const bible = await generateCharacterBible(
         char.name,
         char.description,
@@ -70,8 +84,7 @@ export async function POST(req: NextRequest) {
       return data;
     });
 
-    // Process locations
-    const locationPromises = extraction.locations.map(async (loc) => {
+    const locations = await processBatch(extraction.locations, async (loc) => {
       const bible = await generateLocationBible(
         loc.name,
         loc.description,
@@ -92,11 +105,6 @@ export async function POST(req: NextRequest) {
       if (error) throw error;
       return data;
     });
-
-    const [characters, locations] = await Promise.all([
-      Promise.all(characterPromises),
-      Promise.all(locationPromises),
-    ]);
 
     // Build lookup maps for scene references
     const charMap = new Map(characters.map((c) => [c.name, c.id]));

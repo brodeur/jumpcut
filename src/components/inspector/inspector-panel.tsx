@@ -325,6 +325,61 @@ function InspectorContent({
             </div>
           );
         })}
+
+        {/* Reaction aggregation: consensus + divergence */}
+        {(() => {
+          const personaReactions = genReactions.filter((r) => r.segment !== "neural");
+          if (personaReactions.length < 2) return null;
+
+          const scores = personaReactions.map((r) => {
+            const rxn = r.reaction as Record<string, unknown>;
+            return {
+              segment: r.segment,
+              trust: Number(rxn.trust_score ?? 0),
+              distinct: Number(rxn.distinctiveness ?? 0),
+              compulsion: Number(rxn.compulsion_score ?? 0),
+              wouldWatch: !!rxn.would_watch,
+            };
+          });
+
+          const avgTrust = scores.reduce((s, r) => s + r.trust, 0) / scores.length;
+          const avgDistinct = scores.reduce((s, r) => s + r.distinct, 0) / scores.length;
+          const avgCompulsion = scores.reduce((s, r) => s + r.compulsion, 0) / scores.length;
+          const watchCount = scores.filter((r) => r.wouldWatch).length;
+
+          // Find max divergence
+          const trustRange = Math.max(...scores.map((r) => r.trust)) - Math.min(...scores.map((r) => r.trust));
+          const compulsionRange = Math.max(...scores.map((r) => r.compulsion)) - Math.min(...scores.map((r) => r.compulsion));
+          const hasDivergence = trustRange >= 4 || compulsionRange >= 4;
+
+          return (
+            <div className="mt-2 p-2 rounded border border-jc-border-em bg-jc-surface">
+              <div className="text-micro uppercase tracking-widest text-jc-text-3 mb-1.5">
+                Aggregate
+              </div>
+              <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-micro mb-2">
+                <span className="text-jc-text-3">Avg Trust</span>
+                <span className="text-jc-text">{avgTrust.toFixed(1)}/10</span>
+                <span className="text-jc-text-3">Avg Distinct</span>
+                <span className="text-jc-text">{avgDistinct.toFixed(1)}/10</span>
+                <span className="text-jc-text-3">Avg Compulsion</span>
+                <span className="text-jc-text">{avgCompulsion.toFixed(1)}/10</span>
+                <span className="text-jc-text-3">Would Watch</span>
+                <span className="text-jc-text">{watchCount}/{scores.length}</span>
+              </div>
+              {hasDivergence && (
+                <div className="text-body text-jc-warn">
+                  ⚡ Divergence detected — segments disagree on {trustRange >= 4 ? "trust" : ""}{trustRange >= 4 && compulsionRange >= 4 ? " and " : ""}{compulsionRange >= 4 ? "compulsion" : ""}. This is creative decision territory.
+                </div>
+              )}
+              {!hasDivergence && personaReactions.length >= 3 && (
+                <div className="text-body text-jc-confirm">
+                  ✓ Consensus — segments broadly agree on this asset.
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
     );
   }

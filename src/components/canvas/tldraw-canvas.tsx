@@ -5,7 +5,7 @@ import { Tldraw, type Editor, type TldrawOptions, type StateNode, type TLClickEv
 import "tldraw/tldraw.css";
 import { customShapeUtils } from "./shapes/shape-utils";
 import { useCanvas } from "@/lib/store/canvas-store";
-import type { Character, Location, Scene, CanvasNode, Generation } from "@/lib/types";
+import type { Character, Location, Scene, CanvasNode, Generation, AudienceReaction, CanvasLevel } from "@/lib/types";
 import {
   CHARACTER_NODE_TYPE,
   LOCATION_NODE_TYPE,
@@ -19,6 +19,7 @@ interface TldrawCanvasProps {
   scenes?: Scene[];
   canvasNodes?: CanvasNode[];
   generations?: Generation[];
+  reactions?: AudienceReaction[];
   onOpenGenerate?: (objectId: string, objectType: string) => void;
 }
 
@@ -28,6 +29,7 @@ export default function TldrawCanvas({
   scenes = [],
   canvasNodes = [],
   generations = [],
+  reactions = [],
   onOpenGenerate,
 }: TldrawCanvasProps) {
   const editorRef = useRef<Editor | null>(null);
@@ -82,13 +84,18 @@ export default function TldrawCanvas({
         if (!props.locked) drillDownRef.current("wardrobe", objectId, label);
       } else if (kind === "bible") {
         selectNodeRef.current(objectId);
+      } else if (kind === "location_visual") {
+        drillDownRef.current("location" as CanvasLevel, objectId, label);
+      } else if (kind === "scene_visual") {
+        drillDownRef.current("scene" as CanvasLevel, objectId, label);
       } else if (kind === "generate") {
-        // The generate button inside a face/body/wardrobe canvas
         if (onOpenGenerateRef.current) {
           const lvl = currentLevelRef.current;
           const objectType =
             lvl === "body" ? "character_body" :
-            lvl === "wardrobe" ? "wardrobe" : "character_face";
+            lvl === "wardrobe" ? "wardrobe" :
+            lvl === "location" ? "location" :
+            lvl === "scene" ? "scene" : "character_face";
           onOpenGenerateRef.current(objectId, objectType);
         }
       }
@@ -208,7 +215,10 @@ export default function TldrawCanvas({
     locations.forEach((l) => {
       const pos = posMap.get(l.id) ?? { x: (idx % GRID_COLS) * SPACING_X, y: Math.floor(idx / GRID_COLS) * SPACING_Y };
       idx++;
-      shapes.push({ type: LOCATION_NODE_TYPE, x: pos.x, y: pos.y, props: { w: 220, h: 160, name: l.name, status: l.status, objectId: l.id, thumbnailUrl: "" } });
+      const starredLoc = generations.find(
+        (g) => g.object_id === l.id && g.object_type === "location" && g.starred && g.cloud_url
+      );
+      shapes.push({ type: LOCATION_NODE_TYPE, x: pos.x, y: pos.y, props: { w: 220, h: 160, name: l.name, status: l.status, objectId: l.id, thumbnailUrl: starredLoc?.cloud_url || "" } });
     });
     scenes.forEach((s) => {
       const pos = posMap.get(s.id) ?? { x: (idx % GRID_COLS) * SPACING_X, y: Math.floor(idx / GRID_COLS) * SPACING_Y };
@@ -253,12 +263,50 @@ export default function TldrawCanvas({
     editor.zoomToFit();
   }, [characters, generations, selectNode]);
 
-  // Render generation sub-canvas (face, body, wardrobe) — shows generate button + existing generated images
+  // Render location sub-canvas (Bible + Visual generation card)
+  const renderLocationCanvas = useCallback((locationId: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const loc = locations.find((l) => l.id === locationId);
+
+    const shapes: Parameters<Editor["createShapes"]>[0] = [
+      { type: CARD_NODE_TYPE, x: 0, y: 0, props: { w: 200, h: 120, label: "Location Bible", kind: "bible", locked: false, objectId: locationId } },
+      { type: CARD_NODE_TYPE, x: 240, y: 0, props: { w: 200, h: 120, label: "Visual", kind: "location_visual", locked: false, objectId: locationId } },
+    ];
+
+    if (loc) selectNode(locationId);
+    editor.createShapes(shapes);
+    editor.zoomToFit();
+  }, [locations, selectNode]);
+
+  // Render scene sub-canvas (Brief + Visual generation card)
+  const renderSceneCanvas = useCallback((sceneId: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const scene = scenes.find((s) => s.id === sceneId);
+
+    const shapes: Parameters<Editor["createShapes"]>[0] = [
+      { type: CARD_NODE_TYPE, x: 0, y: 0, props: { w: 200, h: 120, label: "Scene Brief", kind: "bible", locked: false, objectId: sceneId } },
+      { type: CARD_NODE_TYPE, x: 240, y: 0, props: { w: 200, h: 120, label: "Visual", kind: "scene_visual", locked: false, objectId: sceneId } },
+    ];
+
+    if (scene) selectNode(sceneId);
+    editor.createShapes(shapes);
+    editor.zoomToFit();
+  }, [scenes, selectNode]);
+
+  // Render generation sub-canvas (face, body, wardrobe, location, scene) — shows generate button + existing generated images
   const renderGenerationCanvas = useCallback((objectId: string, level: string) => {
     const editor = editorRef.current;
     if (!editor) return;
 
-    const objectType = level === "face" ? "character_face" : level === "body" ? "character_body" : "wardrobe";
+    const objectType =
+      level === "face" ? "character_face" :
+      level === "body" ? "character_body" :
+      level === "location" ? "location" :
+      level === "scene" ? "scene" : "wardrobe";
 
     // Filter generations for this object + type
     const relevantGens = generations.filter(
@@ -282,26 +330,52 @@ export default function TldrawCanvas({
       },
     });
 
-    // Add existing generated images
+    // Add existing generated images with reaction summaries
     relevantGens.forEach((gen, i) => {
+      // Build reaction summary for this generation
+      const genReactions = reactions.filter((r) => r.generation_id === gen.id);
+      let reactionSummary = "";
+      if (genReactions.length > 0) {
+        const segments = genReactions
+          .filter((r) => r.segment !== "neural")
+          .map((r) => {
+            const rxn = r.reaction as Record<string, unknown>;
+            const trust = Number(rxn.trust_score ?? 0);
+            const distinct = Number(rxn.distinctiveness ?? 0);
+            const compulsion = Number(rxn.compulsion_score ?? 0);
+            const avgScore = (trust + distinct + compulsion) / 3;
+            return {
+              segment: r.segment,
+              avgScore: Math.round(avgScore * 100) / 100,
+              wouldWatch: !!rxn.would_watch,
+            };
+          });
+        const neuralRxn = genReactions.find((r) => r.segment === "neural");
+        const neural = neuralRxn
+          ? Number((neuralRxn.reaction as Record<string, unknown>).overall_engagement ?? 0)
+          : null;
+        reactionSummary = JSON.stringify({ segments, neural });
+      }
+
       shapes.push({
         type: "jc-gen-image" as const,
         x: (i + 1) * 240,
         y: 0,
         props: {
           w: 220,
-          h: 220,
+          h: 280,
           imageUrl: gen.cloud_url || "",
           generationId: gen.id,
           objectId,
           starred: gen.starred,
+          reactionSummary,
         },
       });
     });
 
     editor.createShapes(shapes);
     editor.zoomToFit();
-  }, [generations]);
+  }, [generations, reactions]);
 
   // Create / swap shapes based on current level
   useEffect(() => {
@@ -327,6 +401,27 @@ export default function TldrawCanvas({
       } else if (currentLevel === "character") {
         const charId = breadcrumb[breadcrumb.length - 1]?.objectId;
         if (charId) renderCharacterCanvas(charId);
+      } else if (currentLevel === "location") {
+        const locId = breadcrumb[breadcrumb.length - 1]?.objectId;
+        // If coming from project level, show location sub-canvas; if from location_visual, show generation canvas
+        const prevLevel = breadcrumb.length >= 2 ? breadcrumb[breadcrumb.length - 2]?.level : "project";
+        if (locId) {
+          if (prevLevel === "location") {
+            renderGenerationCanvas(locId, "location");
+          } else {
+            renderLocationCanvas(locId);
+          }
+        }
+      } else if (currentLevel === "scene") {
+        const sceneId = breadcrumb[breadcrumb.length - 1]?.objectId;
+        const prevLevel = breadcrumb.length >= 2 ? breadcrumb[breadcrumb.length - 2]?.level : "project";
+        if (sceneId) {
+          if (prevLevel === "scene") {
+            renderGenerationCanvas(sceneId, "scene");
+          } else {
+            renderSceneCanvas(sceneId);
+          }
+        }
       } else if (currentLevel === "face" || currentLevel === "body" || currentLevel === "wardrobe") {
         const objectId = breadcrumb[breadcrumb.length - 1]?.objectId;
         if (objectId) renderGenerationCanvas(objectId, currentLevel);
@@ -334,16 +429,16 @@ export default function TldrawCanvas({
 
       prevLevelRef.current = currentLevel;
     }
-  }, [editorReady, currentLevel, characters, locations, scenes, canvasNodes, breadcrumb, clearCanvas, renderProjectCanvas, renderCharacterCanvas, renderGenerationCanvas]);
+  }, [editorReady, currentLevel, characters, locations, scenes, canvasNodes, breadcrumb, clearCanvas, renderProjectCanvas, renderCharacterCanvas, renderLocationCanvas, renderSceneCanvas, renderGenerationCanvas]);
 
   // Re-render generation canvas when generations change while already on a generation level
   const prevGenSignatureRef = useRef("");
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
-    const isGenLevel = currentLevel === "face" || currentLevel === "body" || currentLevel === "wardrobe";
-    // Build a signature from IDs + URLs to detect any change (count, content, or URL fill-in)
-    const signature = generations.map((g) => `${g.id}:${g.cloud_url || ""}`).join(",");
+    const isGenLevel = currentLevel === "face" || currentLevel === "body" || currentLevel === "wardrobe" || currentLevel === "location" || currentLevel === "scene";
+    // Build a signature from IDs + URLs + reaction count to detect any change
+    const signature = generations.map((g) => `${g.id}:${g.cloud_url || ""}`).join(",") + `|rx:${reactions.length}`;
     if (!isGenLevel) {
       prevGenSignatureRef.current = signature;
       return;

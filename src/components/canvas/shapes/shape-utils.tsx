@@ -59,6 +59,7 @@ declare module "tldraw" {
       generationId: string;
       objectId: string;
       starred: boolean;
+      reactionSummary: string; // JSON-encoded summary
     };
   }
 }
@@ -264,6 +265,14 @@ const CARD_KIND_CONFIG: Record<string, { color: string; svgPath: string }> = {
     color: "#CC3300",
     svgPath: '<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M12 8v8m-4-4h8" stroke="currentColor" stroke-width="1.5" fill="none"/>',
   },
+  location_visual: {
+    color: "#2A6B3C",
+    svgPath: '<rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8.5" cy="8.5" r="1.5" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="m21 15-5-5L5 21" stroke="currentColor" stroke-width="1.5" fill="none"/>',
+  },
+  scene_visual: {
+    color: "#8A6200",
+    svgPath: '<path d="m2 2 20 20M22 2 12 12" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="2" y="8" width="20" height="8" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>',
+  },
 };
 
 export class CardNodeUtil extends ShapeUtil<CardShape> {
@@ -343,10 +352,11 @@ export class GenImageNodeUtil extends ShapeUtil<GenImageShape> {
     generationId: T.string,
     objectId: T.string,
     starred: T.boolean,
+    reactionSummary: T.string,
   };
 
   getDefaultProps(): GenImageShape["props"] {
-    return { w: 220, h: 220, imageUrl: "", generationId: "", objectId: "", starred: false };
+    return { w: 220, h: 280, imageUrl: "", generationId: "", objectId: "", starred: false, reactionSummary: "" };
   }
 
   override canEdit() { return false; }
@@ -358,6 +368,36 @@ export class GenImageNodeUtil extends ShapeUtil<GenImageShape> {
 
   component(shape: GenImageShape) {
     const starred = shape.props.starred;
+    // Parse reaction summary if available
+    let summary: Array<{ segment: string; avgScore: number; wouldWatch: boolean }> | null = null;
+    let neuralScore: number | null = null;
+    try {
+      if (shape.props.reactionSummary) {
+        const parsed = JSON.parse(shape.props.reactionSummary);
+        summary = parsed.segments;
+        neuralScore = parsed.neural;
+      }
+    } catch { /* ignore */ }
+
+    // Neural score color: 10 steps from red to green
+    const neuralColor = neuralScore != null
+      ? [
+          "#dc2626", "#e03820", "#ea580c", "#d97706", "#ca8a04",
+          "#a3a300", "#65a30d", "#16a34a", "#059669", "#047857",
+        ][Math.min(9, Math.max(0, Math.round(neuralScore) - 1))] || "#ca8a04"
+      : null;
+
+    // Eye SVG paths
+    const eyeOpen = '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" stroke="currentColor" stroke-width="2" fill="none"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" fill="none"/>';
+    const eyeOff = '<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49M14.084 14.158a3 3 0 0 1-4.242-4.242" stroke="currentColor" stroke-width="2" fill="none"/><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.97-5.397M3 3l18 18" stroke="currentColor" stroke-width="2" fill="none"/>';
+
+    const SEGMENT_LABELS: Record<string, string> = {
+      converter: "CONV",
+      evangelist: "EVNG",
+      skeptic: "SKPT",
+      genre_native: "NATV",
+    };
+
     return (
       <HTMLContainer>
         <div
@@ -370,32 +410,92 @@ export class GenImageNodeUtil extends ShapeUtil<GenImageShape> {
             overflow: "hidden",
             position: "relative",
             userSelect: "none",
+            display: "flex",
+            flexDirection: "column",
           }}
         >
-          {shape.props.imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={shape.props.imageUrl}
-              alt="Generated"
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-          ) : (
+          {/* Image area */}
+          <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+            {shape.props.imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={shape.props.imageUrl}
+                alt="Generated"
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              />
+            ) : (
+              <div style={{
+                width: "100%",
+                height: "100%",
+                background: "linear-gradient(90deg, #1A1917 25%, #222220 50%, #1A1917 75%)",
+                backgroundSize: "200% 100%",
+                animation: "shimmer 1.5s infinite",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}>
+                <style>{`@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
+                <span style={{ color: "rgba(240,237,232,0.3)", fontSize: 11 }}>Generating...</span>
+              </div>
+            )}
+            {starred && (
+              <div style={{ position: "absolute", top: 6, right: 6, color: "#CC3300", fontSize: 16 }}>★</div>
+            )}
+          </div>
+
+          {/* Reaction summary badges */}
+          {summary && summary.length > 0 && (
             <div style={{
-              width: "100%",
-              height: "100%",
-              background: "linear-gradient(90deg, #1A1917 25%, #222220 50%, #1A1917 75%)",
-              backgroundSize: "200% 100%",
-              animation: "shimmer 1.5s infinite",
+              background: "#222220",
+              padding: "4px 6px",
               display: "flex",
-              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 4,
               justifyContent: "center",
             }}>
-              <style>{`@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
-              <span style={{ color: "rgba(240,237,232,0.3)", fontSize: 11 }}>Generating...</span>
+              {summary.map((s) => (
+                <div key={s.segment} style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 3,
+                  background: "rgba(255,255,255,0.04)",
+                  borderRadius: 3,
+                  padding: "2px 5px",
+                }}>
+                  <span style={{ fontSize: 8, color: "rgba(240,237,232,0.5)", letterSpacing: "0.03em" }}>
+                    {SEGMENT_LABELS[s.segment] || s.segment.slice(0, 4).toUpperCase()}
+                  </span>
+                  <span style={{ fontSize: 11, color: "#F0EDE8", fontWeight: 600 }}>
+                    {s.avgScore.toFixed(1)}
+                  </span>
+                  <svg width="12" height="12" viewBox="0 0 24 24"
+                    style={{ color: s.wouldWatch ? "#65a30d" : "#CC3300" }}
+                    dangerouslySetInnerHTML={{ __html: s.wouldWatch ? eyeOpen : eyeOff }}
+                  />
+                </div>
+              ))}
+              {neuralScore != null && (
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 3,
+                  background: "rgba(255,255,255,0.04)",
+                  borderRadius: 3,
+                  padding: "2px 5px",
+                }}>
+                  <span style={{ fontSize: 8, color: "rgba(240,237,232,0.5)" }}>NEURAL</span>
+                  <span style={{ fontSize: 11, color: "#F0EDE8", fontWeight: 600 }}>
+                    {neuralScore}
+                  </span>
+                  <div style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: neuralColor || "#ca8a04",
+                  }} />
+                </div>
+              )}
             </div>
-          )}
-          {starred && (
-            <div style={{ position: "absolute", top: 6, right: 6, color: "#CC3300", fontSize: 16 }}>★</div>
           )}
         </div>
       </HTMLContainer>
