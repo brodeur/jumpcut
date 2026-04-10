@@ -129,7 +129,7 @@ Based on these evaluations, suggest 5 specific visual mutations within the allow
     let result;
     try {
       result = JSON.parse(cleaned);
-    } catch (parseErr) {
+    } catch {
       console.error("Adapt JSON parse failed. Raw response:", cleaned);
       // Return a fallback adapted prompt rather than crashing
       result = {
