@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
 
     // Get character/location bible for context
     let bibleContext = "";
-    if (gen.object_type === "character_face" || gen.object_type === "character_body") {
+    if (["character_face", "character_body", "wardrobe"].includes(gen.object_type)) {
       const { data: char } = await supabase
         .from("characters")
         .select("name, bible")
@@ -76,16 +76,28 @@ export async function POST(req: NextRequest) {
       ? `Score Card: Bible Match=${(scoreCard.reaction as Record<string, unknown>).bible_match}, Audience=${(scoreCard.reaction as Record<string, unknown>).audience}, Memorability=${(scoreCard.reaction as Record<string, unknown>).memorability}, Archetype=${(scoreCard.reaction as Record<string, unknown>).archetype}, Overall=${(scoreCard.reaction as Record<string, unknown>).overall}`
       : "";
 
+    // Scope constraints by object type
+    const typeConstraints: Record<string, string> = {
+      character_face: `SCOPE: You are evolving a CHARACTER FACE. Only mutate facial features, expression, lighting, grooming, hairstyle. Do NOT change the person's identity, ethnicity, gender, or age.`,
+      character_body: `SCOPE: You are evolving a CHARACTER BODY shot. Only mutate pose, body language, posture, build emphasis, lighting, camera angle. The person's face and identity must remain the same — reference images will enforce this.`,
+      wardrobe: `SCOPE: You are evolving a WARDROBE/COSTUME. ONLY mutate clothing, accessories, fabrics, textures, colors, layering, and styling. DO NOT change the person's face, body, hair, or identity in any way — the person must look exactly the same, only the clothes change. The adapted prompt should describe the outfit variations while keeping "this person" as the subject.`,
+      location: `SCOPE: You are evolving a LOCATION. Only mutate architectural details, lighting, atmosphere, weather, time of day, camera angle. Keep the fundamental setting the same.`,
+      scene: `SCOPE: You are evolving a SCENE composition. Only mutate staging, blocking, camera angle, lighting mood, and atmosphere. The characters and location should remain recognizable from reference images.`,
+    };
+    const scopeConstraint = typeConstraints[gen.object_type] || "";
+
     // Ask the Adaptation Agent to suggest mutations
     const response = await getAnthropic().messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 1500,
-      system: `You are the Adaptation Agent in a Synthetic Character Evolution system. You analyze evaluation results from 10 specialized agents and suggest specific, targeted visual mutations to improve the character's fitness score in the next generation.
+      system: `You are the Adaptation Agent in a Synthetic Character Evolution system. You analyze evaluation results from 10 specialized agents and suggest specific, targeted visual mutations to improve fitness in the next generation.
+
+${scopeConstraint}
 
 Your mutations must be:
-- Specific and actionable (not "make it better" but "tighten the jawline and add asymmetry to the left brow")
+- Specific and actionable (not "make it better" but concrete visual changes)
 - Grounded in the evaluation feedback (address the weakest scores)
-- Physical/visual in nature (things an image generation model can act on)
+- STRICTLY within scope — do not mutate anything outside the allowed scope above
 - Preserving what works (don't change high-scoring traits)
 
 Return a JSON object:
@@ -107,14 +119,25 @@ ${scSummary}
 Agent evaluations:
 ${evalSummary}
 
-Based on these evaluations, suggest 5 specific visual mutations to improve this character's fitness, and produce an adapted prompt that incorporates them.`,
+Based on these evaluations, suggest 5 specific visual mutations within the allowed scope, and produce an adapted prompt that incorporates them.`,
         },
       ],
     });
 
     const text = response.content[0].type === "text" ? response.content[0].text : "{}";
     const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-    const result = JSON.parse(cleaned);
+    let result;
+    try {
+      result = JSON.parse(cleaned);
+    } catch (parseErr) {
+      console.error("Adapt JSON parse failed. Raw response:", cleaned);
+      // Return a fallback adapted prompt rather than crashing
+      result = {
+        mutations: ["Retry with refined approach"],
+        adapted_prompt: gen.prompt,
+        strategy: "JSON parse failed, reusing original prompt",
+      };
+    }
 
     return NextResponse.json(result);
   } catch (error) {

@@ -169,16 +169,26 @@ export async function POST(req: NextRequest) {
  */
 export async function DELETE(req: NextRequest) {
   try {
-    const { entityId, type } = await req.json();
+    const body = await req.json();
+    const supabase = getSupabase();
 
+    // Delete a single generation
+    if (body.generationId) {
+      await supabase.from("audience_reactions").delete().eq("generation_id", body.generationId);
+      const { error } = await supabase.from("generations").delete().eq("id", body.generationId);
+      if (error) throw error;
+      return NextResponse.json({ deleted: true });
+    }
+
+    // Delete an entity (character/location/scene) with cascade
+    const { entityId, type } = body;
     if (!entityId || !type) {
       return NextResponse.json(
-        { error: "entityId and type are required" },
+        { error: "entityId+type or generationId required" },
         { status: 400 }
       );
     }
 
-    const supabase = getSupabase();
     const table = type === "character" ? "characters" : type === "location" ? "locations" : "scenes";
 
     // 1. Find all generations for this entity
@@ -190,7 +200,6 @@ export async function DELETE(req: NextRequest) {
 
     // 2. Delete audience reactions for those generations
     if (genIds.length > 0) {
-      // Delete in batches to avoid PostgREST .in() issues
       for (let i = 0; i < genIds.length; i += 50) {
         const batch = genIds.slice(i, i + 50);
         await supabase.from("audience_reactions").delete().in("generation_id", batch);
@@ -209,9 +218,9 @@ export async function DELETE(req: NextRequest) {
 
     return NextResponse.json({ deleted: true });
   } catch (error) {
-    console.error("Entity deletion error:", error);
+    console.error("Deletion error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to delete entity" },
+      { error: error instanceof Error ? error.message : "Delete failed" },
       { status: 500 }
     );
   }

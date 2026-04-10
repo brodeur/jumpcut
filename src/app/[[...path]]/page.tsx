@@ -254,9 +254,11 @@ export default function Home() {
     [characters, locations, scenes, generations]
   );
 
-  // Ref for refresh to avoid stale closure
+  // Refs for values needed in event handlers (avoid stale closures)
   const refreshRef = useRef(projectData.refresh);
   refreshRef.current = projectData.refresh;
+  const generationsRef = useRef(generations);
+  generationsRef.current = generations;
 
   // Listen for generate events from the dialog (uses window events to avoid stale closures)
   useEffect(() => {
@@ -330,11 +332,31 @@ export default function Home() {
           body: JSON.stringify({ generationId }),
         });
 
-        if (!adaptRes.ok) throw new Error("Adaptation failed");
+        if (!adaptRes.ok) {
+          const errBody = await adaptRes.json().catch(() => ({}));
+          console.error("[evolve] Adapt failed:", adaptRes.status, errBody);
+          throw new Error(errBody.error || "Adaptation failed");
+        }
         const { adapted_prompt, strategy } = await adaptRes.json();
         console.log("[evolve] Strategy:", strategy);
 
-        // Step 2: Generate with the adapted prompt
+        // Step 2: Collect reference images for conditioning
+        // Always include the source generation (the image being evolved from)
+        // Plus the upstream starred asset for character consistency
+        const evolveImageUrls: string[] = [];
+        const gens = generationsRef.current;
+        const sourceGen = gens.find((g) => g.id === generationId);
+        if (sourceGen?.cloud_url) evolveImageUrls.push(sourceGen.cloud_url);
+
+        if (objectType === "character_body") {
+          const ref = gens.find((g) => g.object_id === objectId && g.object_type === "character_face" && g.starred && g.cloud_url);
+          if (ref?.cloud_url) evolveImageUrls.push(ref.cloud_url);
+        } else if (objectType === "wardrobe") {
+          const ref = gens.find((g) => g.object_id === objectId && g.object_type === "character_body" && g.starred && g.cloud_url);
+          if (ref?.cloud_url) evolveImageUrls.push(ref.cloud_url);
+        }
+
+        // Step 3: Generate with the adapted prompt
         const style = localStorage.getItem(`jc_style_${localStorage.getItem("jc_project_id")}`) || "35mm film";
         const genRes = await fetch("/api/generate", {
           method: "POST",
@@ -345,7 +367,8 @@ export default function Home() {
             prompt: adapted_prompt,
             style,
             count: 2,
-            conditioningRefs: [generationId], // Track lineage
+            conditioningRefs: [generationId],
+            imageUrls: evolveImageUrls,
           }),
         });
 
@@ -399,6 +422,23 @@ export default function Home() {
         projectData.refresh();
       } catch (err) {
         console.error("Delete entity error:", err);
+      }
+    },
+    [projectData]
+  );
+
+  const handleDeleteGeneration = useCallback(
+    async (generationId: string) => {
+      try {
+        const res = await fetch("/api/entities", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ generationId }),
+        });
+        if (!res.ok) console.error("Delete generation failed:", await res.text());
+        projectData.refresh();
+      } catch (err) {
+        console.error("Delete generation error:", err);
       }
     },
     [projectData]
@@ -538,6 +578,7 @@ export default function Home() {
             reactions={reactions}
             onOpenGenerate={handleOpenGenerate}
             onDeleteEntity={handleDeleteEntity}
+            onDeleteGeneration={handleDeleteGeneration}
           />
           <InspectorPanel
             characters={characters}

@@ -14,6 +14,7 @@ interface CanvasPanelProps {
   reactions?: AudienceReaction[];
   onOpenGenerate?: (objectId: string, objectType: string) => void;
   onDeleteEntity?: (entityId: string, type: "character" | "location" | "scene") => void;
+  onDeleteGeneration?: (generationId: string) => void;
 }
 
 export function CanvasPanel({
@@ -25,6 +26,7 @@ export function CanvasPanel({
   reactions = [],
   onOpenGenerate,
   onDeleteEntity,
+  onDeleteGeneration,
 }: CanvasPanelProps) {
   return (
     <div className="flex-1 bg-jc-bg relative overflow-hidden">
@@ -37,6 +39,7 @@ export function CanvasPanel({
         reactions={reactions}
         onOpenGenerate={onOpenGenerate}
         onDeleteEntity={onDeleteEntity}
+        onDeleteGeneration={onDeleteGeneration}
       />
     </div>
   );

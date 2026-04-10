@@ -13,6 +13,14 @@ import {
   CARD_NODE_TYPE,
 } from "./shapes/types";
 
+interface PendingDelete {
+  kind: "entity" | "generation";
+  id: string;
+  entityType?: "character" | "location" | "scene";
+  displayName: string;
+  description: string;
+}
+
 interface TldrawCanvasProps {
   characters?: Character[];
   locations?: Location[];
@@ -22,6 +30,7 @@ interface TldrawCanvasProps {
   reactions?: AudienceReaction[];
   onOpenGenerate?: (objectId: string, objectType: string) => void;
   onDeleteEntity?: (entityId: string, type: "character" | "location" | "scene") => void;
+  onDeleteGeneration?: (generationId: string) => void;
 }
 
 export default function TldrawCanvas({
@@ -33,6 +42,7 @@ export default function TldrawCanvas({
   reactions = [],
   onOpenGenerate,
   onDeleteEntity,
+  onDeleteGeneration,
 }: TldrawCanvasProps) {
   const editorRef = useRef<Editor | null>(null);
   const [editorReady, setEditorReady] = useState(false);
@@ -52,7 +62,10 @@ export default function TldrawCanvas({
   currentLevelRef.current = currentLevel;
   const onDeleteEntityRef = useRef(onDeleteEntity);
   onDeleteEntityRef.current = onDeleteEntity;
+  const onDeleteGenerationRef = useRef(onDeleteGeneration);
+  onDeleteGenerationRef.current = onDeleteGeneration;
   const suppressDeleteRef = useRef(false);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
 
   // Disable tldraw's default double-click-to-create-text
   const tldrawOptions = useMemo<Partial<TldrawOptions>>(() => ({
@@ -483,7 +496,7 @@ export default function TldrawCanvas({
     }
   }, [generations, reactions, currentLevel, breadcrumb, clearCanvas, renderGenerationCanvas]);
 
-  // Intercept entity shape deletions (right-click → Delete, or keyboard delete)
+  // Intercept shape deletions — undo immediately and show confirmation
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor || !editorReady) return;
@@ -496,23 +509,87 @@ export default function TldrawCanvas({
 
     const cleanup = editor.store.listen(({ changes }) => {
       if (suppressDeleteRef.current) return;
-      if (currentLevelRef.current !== "project") return;
 
       const removed = Object.values(changes.removed);
       for (const record of removed) {
         if (record.typeName !== "shape") continue;
         const shape = record as unknown as { type: string; props: Record<string, unknown> };
+
+        // Entity shapes (project level)
         const entityType = ENTITY_TYPES[shape.type];
-        if (!entityType) continue;
-        const objectId = shape.props.objectId as string | undefined;
-        if (objectId && onDeleteEntityRef.current) {
-          onDeleteEntityRef.current(objectId, entityType);
+        if (entityType) {
+          const objectId = shape.props.objectId as string | undefined;
+          const name = (shape.props.name as string) || entityType;
+          if (objectId) {
+            editor.undo();
+            setPendingDelete({
+              kind: "entity",
+              id: objectId,
+              entityType,
+              displayName: name,
+              description: `This will permanently remove the ${entityType} and all its generations, evaluations, and canvas data.`,
+            });
+            break;
+          }
+        }
+
+        // Generated image shapes (generation canvases)
+        if (shape.type === "jc-gen-image") {
+          const generationId = shape.props.generationId as string | undefined;
+          if (generationId) {
+            editor.undo();
+            setPendingDelete({
+              kind: "generation",
+              id: generationId,
+              displayName: "this generation",
+              description: "This will permanently remove the generated image and its evaluation scores.",
+            });
+            break;
+          }
         }
       }
     }, { source: "user", scope: "document" });
 
     return cleanup;
   }, [editorReady]);
+
+  // Handle confirmed deletion
+  const handleConfirmDelete = useCallback(() => {
+    if (!pendingDelete) return;
+    const editor = editorRef.current;
+
+    if (pendingDelete.kind === "entity" && pendingDelete.entityType) {
+      // Delete entity shape from canvas + DB
+      if (editor) {
+        suppressDeleteRef.current = true;
+        const shapes = editor.getCurrentPageShapes();
+        const shape = shapes.find((s) => (s.props as Record<string, unknown>).objectId === pendingDelete.id);
+        if (shape) editor.deleteShapes([shape.id]);
+        suppressDeleteRef.current = false;
+      }
+      if (onDeleteEntityRef.current) {
+        onDeleteEntityRef.current(pendingDelete.id, pendingDelete.entityType);
+      }
+    } else if (pendingDelete.kind === "generation") {
+      // Delete gen-image shape from canvas + DB
+      if (editor) {
+        suppressDeleteRef.current = true;
+        const shapes = editor.getCurrentPageShapes();
+        const shape = shapes.find((s) => (s.props as Record<string, unknown>).generationId === pendingDelete.id);
+        if (shape) editor.deleteShapes([shape.id]);
+        suppressDeleteRef.current = false;
+      }
+      if (onDeleteGenerationRef.current) {
+        onDeleteGenerationRef.current(pendingDelete.id);
+      }
+    }
+
+    setPendingDelete(null);
+  }, [pendingDelete]);
+
+  const handleCancelDelete = useCallback(() => {
+    setPendingDelete(null);
+  }, []);
 
   // Escape key → navigate up
   useEffect(() => {
@@ -538,6 +615,34 @@ export default function TldrawCanvas({
         options={tldrawOptions}
         hideUi
       />
+
+      {/* Delete confirmation dialog */}
+      {pendingDelete && (
+        <div className="fixed inset-0 bg-jc-bg/80 flex items-center justify-center z-50">
+          <div className="bg-jc-surface border border-jc-border rounded-lg w-[400px] p-5">
+            <h3 className="text-name text-jc-text font-medium mb-3">
+              Delete {pendingDelete.displayName}?
+            </h3>
+            <p className="text-body text-jc-text-2 mb-4">
+              {pendingDelete.description}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={handleCancelDelete}
+                className="flex-1 py-2 rounded text-ui border border-jc-border text-jc-text-2 hover:text-jc-text transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="flex-1 py-2 rounded text-ui font-medium bg-red-700 text-jc-text hover:bg-red-600 transition-colors"
+              >
+                Delete Permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
