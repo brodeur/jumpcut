@@ -463,7 +463,7 @@ export default function TldrawCanvas({
       const objectId = breadcrumb[breadcrumb.length - 1]?.objectId;
       if (objectId) renderGenerationCanvas(objectId, currentLevel);
     }
-  }, [generations, currentLevel, breadcrumb, clearCanvas, renderGenerationCanvas]);
+  }, [generations, reactions, currentLevel, breadcrumb, clearCanvas, renderGenerationCanvas]);
 
   // Escape key → navigate up
   useEffect(() => {
