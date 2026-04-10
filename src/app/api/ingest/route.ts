@@ -16,11 +16,11 @@ function getSupabaseAdmin() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { scriptText, projectName, visualStyle, userId } = await req.json();
+    const { scriptText, projectName, visualStyle, userId, emptyProject } = await req.json();
 
-    if (!scriptText || !userId) {
+    if (!userId) {
       return NextResponse.json(
-        { error: "scriptText and userId are required" },
+        { error: "userId is required" },
         { status: 400 }
       );
     }
@@ -32,13 +32,36 @@ export async function POST(req: NextRequest) {
       .from("projects")
       .insert({
         name: projectName || "Untitled Project",
-        script_text: scriptText,
+        script_text: emptyProject ? null : scriptText,
         created_by: userId,
       })
       .select()
       .single();
 
     if (projectError) throw projectError;
+
+    // For empty projects, just create the project and return
+    if (emptyProject) {
+      // Initialize ladder state
+      await supabase.from("ladder_state").insert({ project_id: project.id });
+
+      return NextResponse.json({
+        projectId: project.id,
+        title: projectName || "Untitled Project",
+        summary: "",
+        visualStyle: visualStyle || "35mm film",
+        characterCount: 0,
+        locationCount: 0,
+        sceneCount: 0,
+      });
+    }
+
+    if (!scriptText) {
+      return NextResponse.json(
+        { error: "scriptText is required for non-empty projects" },
+        { status: 400 }
+      );
+    }
 
     // 2. Extract structure from script via GPT-4o
     const extraction = await extractScript(scriptText);

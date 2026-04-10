@@ -13,12 +13,14 @@ interface ToolbarProps {
   currentProjectId?: string | null;
   onSwitchProject?: (id: string) => void;
   onNewProject?: () => void;
+  onNewEntity?: () => void;
 }
 
 export function Toolbar({
   currentProjectId,
   onSwitchProject,
   onNewProject,
+  onNewEntity,
 }: ToolbarProps) {
   const { breadcrumb, navigateTo } = useCanvas();
   const [open, setOpen] = useState(false);
@@ -74,8 +76,17 @@ export function Toolbar({
         ))}
       </div>
 
-      {/* Project selector + zoom */}
+      {/* Actions */}
       <div className="flex items-center gap-4">
+        {/* + New entity */}
+        {onNewEntity && (
+          <button
+            onClick={onNewEntity}
+            className="flex items-center gap-1 px-2 py-1 text-meta text-jc-red hover:text-jc-red-hover transition-colors"
+          >
+            + New
+          </button>
+        )}
         {/* Project dropdown */}
         <div className="relative" ref={dropdownRef}>
           <button

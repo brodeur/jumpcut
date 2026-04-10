@@ -87,7 +87,7 @@ export async function GET(
       console.log(`[project/${projectId}] filtered gens: ${(generations as unknown[]).length}`);
 
       // Fetch reactions for matched generations
-      const genIds = generations.map((g: { id: string }) => g.id);
+      const genIds = (generations as Array<{ id: string }>).map((g) => g.id);
       if (genIds.length > 0) {
         const { data: rxns } = await supabase
           .from("audience_reactions")

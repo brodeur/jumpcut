@@ -8,6 +8,7 @@ import { CanvasPanel } from "@/components/canvas/canvas-panel";
 import { InspectorPanel } from "@/components/inspector/inspector-panel";
 import { ScriptDialog } from "@/components/script-dialog";
 import { GenerateDialog } from "@/components/generate-dialog";
+import { NewEntityDialog } from "@/components/new-entity-dialog";
 import { useProject } from "@/lib/hooks/use-project";
 import type { Generation } from "@/lib/types";
 
@@ -25,6 +26,7 @@ export default function Home() {
   const projectData = useProject(projectId);
   const { characters, locations, scenes, canvasNodes, reactions } = projectData;
   const [generateDialog, setGenerateDialog] = useState<GenerateDialogState | null>(null);
+  const [showNewEntity, setShowNewEntity] = useState(false);
   // Merge persisted generations from DB with newly generated ones (before next fetch)
   const [newGenerations, setNewGenerations] = useState<Generation[]>([]);
   const generations = [...projectData.generations, ...newGenerations.filter(
@@ -346,6 +348,13 @@ export default function Home() {
           onClose={() => setGenerateDialog(null)}
         />
       )}
+      {showNewEntity && projectId && (
+        <NewEntityDialog
+          projectId={projectId}
+          onClose={() => setShowNewEntity(false)}
+          onCreated={() => projectData.refresh()}
+        />
+      )}
 
       {/* False Negative Alert — Bible Repair Suggestion */}
       {falseNegativeAlert && (
@@ -404,6 +413,7 @@ export default function Home() {
             localStorage.removeItem(PROJECT_ID_KEY);
             setProjectId(null);
           }}
+          onNewEntity={projectId ? () => setShowNewEntity(true) : undefined}
         />
         <div className="flex-1 flex overflow-hidden">
           <NodeBrowser
