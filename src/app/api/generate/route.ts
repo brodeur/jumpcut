@@ -20,7 +20,7 @@ interface FalImage {
 
 export async function POST(req: NextRequest) {
   try {
-    const { objectId, objectType, prompt, style, count = 4, conditioningRefs = [] } =
+    const { objectId, objectType, prompt, style, count = 4, conditioningRefs = [], imageUrls = [] } =
       await req.json();
 
     if (!objectId || !objectType || !prompt) {
@@ -64,6 +64,13 @@ Keep each direction to 1-2 sentences. Return ONLY a JSON array of strings.`,
       }
     }
 
+    // Use 16:9 for locations and scenes (establishing/cinematic shots), 1:1 for characters
+    const aspectRatio = (objectType === "location" || objectType === "scene") ? "16:9" as const : "1:1" as const;
+
+    // Use edit endpoint when reference images are provided (body←face, wardrobe←body, scene←characters+location)
+    const hasRefs = Array.isArray(imageUrls) && imageUrls.length > 0;
+    const endpoint = hasRefs ? "fal-ai/nano-banana-2/edit" : "fal-ai/nano-banana-2";
+
     // Generate images in parallel via fal.ai Nano Banana 2
     const generationPromises = Array.from({ length: count }, (_, i) => {
       const direction = castingDirections[i] || "";
@@ -71,15 +78,20 @@ Keep each direction to 1-2 sentences. Return ONLY a JSON array of strings.`,
         ? `${styledPrompt}\n\nCasting direction: ${direction}`
         : styledPrompt;
 
-      return fal.subscribe("fal-ai/nano-banana-2", {
-        input: {
-          prompt: variantPrompt,
-          aspect_ratio: "1:1" as const,
-          resolution: "1K" as const,
-          output_format: "jpeg" as const,
-          seed: Math.floor(Math.random() * 2147483647),
-        },
-      });
+      const input: Record<string, unknown> = {
+        prompt: variantPrompt,
+        aspect_ratio: aspectRatio,
+        resolution: "1K" as const,
+        output_format: "jpeg" as const,
+        seed: Math.floor(Math.random() * 2147483647),
+      };
+
+      // Pass reference images to edit endpoint
+      if (hasRefs) {
+        input.image_urls = imageUrls;
+      }
+
+      return fal.subscribe(endpoint, { input });
     });
 
     const results = await Promise.all(generationPromises);

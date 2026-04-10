@@ -16,6 +16,7 @@ interface GenerateDialogState {
   objectId: string;
   objectType: string;
   defaultPrompt: string;
+  imageUrls: string[];
 }
 
 const PROJECT_ID_KEY = "jc_project_id";
@@ -148,6 +149,7 @@ export default function Home() {
   const handleOpenGenerate = useCallback(
     (objectId: string, objectType: string) => {
       let defaultPrompt = "";
+      const imageUrls: string[] = [];
 
       if (objectType === "character_face") {
         const char = characters.find((c) => c.id === objectId);
@@ -158,7 +160,26 @@ export default function Home() {
         const char = characters.find((c) => c.id === objectId);
         const bible = char?.bible as Record<string, unknown> | null;
         const visualDesc = (bible?.visual_description as string) || "";
-        defaultPrompt = `Full body portrait, standing pose, neutral background. ${visualDesc}`;
+        // Pass starred face as reference so body matches the cast face
+        const starredFace = generations.find(
+          (g) => g.object_id === objectId && g.object_type === "character_face" && g.starred && g.cloud_url
+        );
+        if (starredFace?.cloud_url) imageUrls.push(starredFace.cloud_url);
+        defaultPrompt = starredFace
+          ? `Full body portrait of this person, standing pose, neutral background. ${visualDesc}`
+          : `Full body portrait, standing pose, neutral background. ${visualDesc}`;
+      } else if (objectType === "wardrobe") {
+        const char = characters.find((c) => c.id === objectId);
+        const bible = char?.bible as Record<string, unknown> | null;
+        const visualDesc = (bible?.visual_description as string) || "";
+        // Pass starred body as reference so wardrobe matches
+        const starredBody = generations.find(
+          (g) => g.object_id === objectId && g.object_type === "character_body" && g.starred && g.cloud_url
+        );
+        if (starredBody?.cloud_url) imageUrls.push(starredBody.cloud_url);
+        defaultPrompt = starredBody
+          ? `This person in full wardrobe, styled for the role. ${visualDesc}`
+          : `Character in full wardrobe, styled for the role. ${visualDesc}`;
       } else if (objectType === "location") {
         const loc = locations.find((l) => l.id === objectId);
         const bible = loc?.bible as Record<string, unknown> | null;
@@ -167,17 +188,36 @@ export default function Home() {
       } else if (objectType === "scene") {
         const scene = scenes.find((s) => s.id === objectId);
         const desc = scene?.description || "";
-        // Include starred character faces and location in scene prompt
-        const charNames = characters
-          .filter((c) => scene?.character_ids?.includes(c.id))
-          .map((c) => c.name);
+        // Collect starred character images + starred location visual as references
+        const sceneChars = characters.filter((c) => scene?.character_ids?.includes(c.id));
+        const charDescs: string[] = [];
+        for (const c of sceneChars) {
+          const starredFace = generations.find(
+            (g) => g.object_id === c.id && g.object_type === "character_face" && g.starred && g.cloud_url
+          );
+          const starredBody = generations.find(
+            (g) => g.object_id === c.id && g.object_type === "character_body" && g.starred && g.cloud_url
+          );
+          // Prefer body (includes face conditioning), fall back to face
+          if (starredBody?.cloud_url) imageUrls.push(starredBody.cloud_url);
+          else if (starredFace?.cloud_url) imageUrls.push(starredFace.cloud_url);
+          charDescs.push(c.name);
+        }
+        // Add starred location visual
         const loc = locations.find((l) => l.id === scene?.location_id);
-        defaultPrompt = `Cinematic scene still. ${desc}. Characters present: ${charNames.join(", ") || "unknown"}. Location: ${loc?.name || "unknown"}.`;
+        if (loc) {
+          const starredLoc = generations.find(
+            (g) => g.object_id === loc.id && g.object_type === "location" && g.starred && g.cloud_url
+          );
+          if (starredLoc?.cloud_url) imageUrls.push(starredLoc.cloud_url);
+        }
+        const refNote = imageUrls.length > 0 ? " Use the reference images for character and location consistency." : "";
+        defaultPrompt = `Cinematic scene still. ${desc}. Characters present: ${charDescs.join(", ") || "unknown"}. Location: ${loc?.name || "unknown"}.${refNote}`;
       }
 
-      setGenerateDialog({ objectId, objectType, defaultPrompt });
+      setGenerateDialog({ objectId, objectType, defaultPrompt, imageUrls });
     },
-    [characters, locations, scenes]
+    [characters, locations, scenes, generations]
   );
 
   // Ref for refresh to avoid stale closure
@@ -239,6 +279,15 @@ export default function Home() {
       const { generationId, objectId, objectType } = (e as CustomEvent).detail;
       console.log("[page] evolving from", generationId);
 
+      // Show placeholders immediately so user gets instant feedback
+      const placeholders = Array.from({ length: 2 }, (_, i) => ({
+        id: `pending-${Date.now()}-${i}`,
+        cloud_url: "",
+      }));
+      window.dispatchEvent(new CustomEvent("jc-generate-start", {
+        detail: { placeholders, objectId, objectType },
+      }));
+
       try {
         // Step 1: Get adaptation suggestions
         const adaptRes = await fetch("/api/adapt", {
@@ -251,16 +300,7 @@ export default function Home() {
         const { adapted_prompt, strategy } = await adaptRes.json();
         console.log("[evolve] Strategy:", strategy);
 
-        // Step 2: Create placeholders
-        const placeholders = Array.from({ length: 2 }, (_, i) => ({
-          id: `pending-${Date.now()}-${i}`,
-          cloud_url: "",
-        }));
-        window.dispatchEvent(new CustomEvent("jc-generate-start", {
-          detail: { placeholders, objectId, objectType },
-        }));
-
-        // Step 3: Generate with the adapted prompt
+        // Step 2: Generate with the adapted prompt
         const style = localStorage.getItem(`jc_style_${localStorage.getItem("jc_project_id")}`) || "35mm film";
         const genRes = await fetch("/api/generate", {
           method: "POST",
@@ -313,6 +353,23 @@ export default function Home() {
     confidence: number;
   } | null>(null);
 
+  const handleDeleteEntity = useCallback(
+    async (entityId: string, type: "character" | "location" | "scene") => {
+      try {
+        const res = await fetch("/api/entities", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ entityId, type }),
+        });
+        if (!res.ok) console.error("Delete failed:", await res.text());
+        projectData.refresh();
+      } catch (err) {
+        console.error("Delete entity error:", err);
+      }
+    },
+    [projectData]
+  );
+
   const handleStar = useCallback(
     async (generationId: string) => {
       const res = await fetch("/api/star", {
@@ -345,12 +402,15 @@ export default function Home() {
           objectType={generateDialog.objectType}
           defaultPrompt={generateDialog.defaultPrompt}
           style={projectId ? localStorage.getItem(`jc_style_${projectId}`) || "35mm film" : "35mm film"}
+          imageUrls={generateDialog.imageUrls}
           onClose={() => setGenerateDialog(null)}
         />
       )}
       {showNewEntity && projectId && (
         <NewEntityDialog
           projectId={projectId}
+          characters={characters.map((c) => ({ id: c.id, name: c.name }))}
+          locations={locations.map((l) => ({ id: l.id, name: l.name }))}
           onClose={() => setShowNewEntity(false)}
           onCreated={() => projectData.refresh()}
         />
@@ -441,6 +501,7 @@ export default function Home() {
             generations={generations}
             reactions={reactions}
             onOpenGenerate={handleOpenGenerate}
+            onDeleteEntity={handleDeleteEntity}
           />
           <InspectorPanel
             characters={characters}

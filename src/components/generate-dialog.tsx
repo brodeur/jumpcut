@@ -7,6 +7,7 @@ interface GenerateDialogProps {
   objectId: string;
   objectType: string;
   style?: string;
+  imageUrls?: string[];
   onClose: () => void;
 }
 
@@ -15,6 +16,7 @@ export function GenerateDialog({
   objectId,
   objectType,
   style,
+  imageUrls = [],
   onClose,
 }: GenerateDialogProps) {
   const [prompt, setPrompt] = useState(defaultPrompt);
@@ -47,6 +49,7 @@ export function GenerateDialog({
         prompt: prompt.trim(),
         style,
         count: 2,
+        imageUrls,
       }),
     })
       .then((res) => {
@@ -90,9 +93,21 @@ export function GenerateDialog({
         </div>
 
         <p className="text-meta text-jc-text-3 mb-3">
-          Edit the prompt below, then generate 4 variants. The synthetic
+          Edit the prompt below, then generate 2 variants. The synthetic
           audience will evaluate each one automatically.
         </p>
+
+        {imageUrls.length > 0 && (
+          <div className="mb-3 p-2 rounded bg-jc-raised border border-jc-border">
+            <div className="text-micro uppercase tracking-widest text-jc-text-3 mb-2">Reference images ({imageUrls.length})</div>
+            <div className="flex gap-2 overflow-x-auto">
+              {imageUrls.map((url, i) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img key={i} src={url} alt={`Ref ${i + 1}`} className="h-12 rounded border border-jc-border object-cover flex-shrink-0" />
+              ))}
+            </div>
+          </div>
+        )}
 
         <textarea
           value={prompt}

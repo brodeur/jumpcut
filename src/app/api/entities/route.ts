@@ -26,7 +26,7 @@ function getSupabase() {
  */
 export async function POST(req: NextRequest) {
   try {
-    const { projectId, type, name, description, bible } = await req.json();
+    const { projectId, type, name, description, bible, characterIds, locationId } = await req.json();
 
     if (!projectId || !type || !name) {
       return NextResponse.json(
@@ -122,7 +122,8 @@ export async function POST(req: NextRequest) {
           project_id: projectId,
           name,
           description: description || null,
-          character_ids: [],
+          character_ids: characterIds || [],
+          location_id: locationId || null,
         })
         .select()
         .single();
@@ -153,6 +154,64 @@ export async function POST(req: NextRequest) {
     console.error("Entity creation error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to create entity" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/entities
+ *
+ * Delete a character, location, or scene and all associated data.
+ * Cascades: generations → audience_reactions, canvas_nodes.
+ *
+ * Input: { entityId: string, type: "character" | "location" | "scene" }
+ */
+export async function DELETE(req: NextRequest) {
+  try {
+    const { entityId, type } = await req.json();
+
+    if (!entityId || !type) {
+      return NextResponse.json(
+        { error: "entityId and type are required" },
+        { status: 400 }
+      );
+    }
+
+    const supabase = getSupabase();
+    const table = type === "character" ? "characters" : type === "location" ? "locations" : "scenes";
+
+    // 1. Find all generations for this entity
+    const { data: gens } = await supabase
+      .from("generations")
+      .select("id")
+      .eq("object_id", entityId);
+    const genIds = gens?.map((g) => g.id) || [];
+
+    // 2. Delete audience reactions for those generations
+    if (genIds.length > 0) {
+      // Delete in batches to avoid PostgREST .in() issues
+      for (let i = 0; i < genIds.length; i += 50) {
+        const batch = genIds.slice(i, i + 50);
+        await supabase.from("audience_reactions").delete().in("generation_id", batch);
+      }
+    }
+
+    // 3. Delete generations
+    await supabase.from("generations").delete().eq("object_id", entityId);
+
+    // 4. Delete canvas nodes
+    await supabase.from("canvas_nodes").delete().eq("object_id", entityId);
+
+    // 5. Delete the entity itself
+    const { error } = await supabase.from(table).delete().eq("id", entityId);
+    if (error) throw error;
+
+    return NextResponse.json({ deleted: true });
+  } catch (error) {
+    console.error("Entity deletion error:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to delete entity" },
       { status: 500 }
     );
   }

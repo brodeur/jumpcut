@@ -21,6 +21,7 @@ interface TldrawCanvasProps {
   generations?: Generation[];
   reactions?: AudienceReaction[];
   onOpenGenerate?: (objectId: string, objectType: string) => void;
+  onDeleteEntity?: (entityId: string, type: "character" | "location" | "scene") => void;
 }
 
 export default function TldrawCanvas({
@@ -31,6 +32,7 @@ export default function TldrawCanvas({
   generations = [],
   reactions = [],
   onOpenGenerate,
+  onDeleteEntity,
 }: TldrawCanvasProps) {
   const editorRef = useRef<Editor | null>(null);
   const [editorReady, setEditorReady] = useState(false);
@@ -48,6 +50,9 @@ export default function TldrawCanvas({
   onOpenGenerateRef.current = onOpenGenerate;
   const currentLevelRef = useRef(currentLevel);
   currentLevelRef.current = currentLevel;
+  const onDeleteEntityRef = useRef(onDeleteEntity);
+  onDeleteEntityRef.current = onDeleteEntity;
+  const suppressDeleteRef = useRef(false);
 
   // Disable tldraw's default double-click-to-create-text
   const tldrawOptions = useMemo<Partial<TldrawOptions>>(() => ({
@@ -85,17 +90,17 @@ export default function TldrawCanvas({
       } else if (kind === "bible") {
         selectNodeRef.current(objectId);
       } else if (kind === "location_visual") {
-        drillDownRef.current("location" as CanvasLevel, objectId, label);
+        drillDownRef.current("location_visual", objectId, label);
       } else if (kind === "scene_visual") {
-        drillDownRef.current("scene" as CanvasLevel, objectId, label);
+        drillDownRef.current("scene_visual", objectId, label);
       } else if (kind === "generate") {
         if (onOpenGenerateRef.current) {
           const lvl = currentLevelRef.current;
           const objectType =
             lvl === "body" ? "character_body" :
             lvl === "wardrobe" ? "wardrobe" :
-            lvl === "location" ? "location" :
-            lvl === "scene" ? "scene" : "character_face";
+            lvl === "location_visual" ? "location" :
+            lvl === "scene_visual" ? "scene" : "character_face";
           onOpenGenerateRef.current(objectId, objectType);
         }
       }
@@ -165,10 +170,11 @@ export default function TldrawCanvas({
     [handleShapeDoubleClick]
   );
 
-  // Helper: clear all shapes from the canvas
+  // Helper: clear all shapes from the canvas (suppresses delete interception)
   const clearCanvas = useCallback(() => {
     const editor = editorRef.current;
     if (!editor) return;
+    suppressDeleteRef.current = true;
     editor.run(() => {
       editor.selectNone();
       const allShapes = editor.getCurrentPageShapes();
@@ -176,6 +182,7 @@ export default function TldrawCanvas({
         editor.deleteShapes(allShapes.map((s) => s.id));
       }
     });
+    suppressDeleteRef.current = false;
   }, []);
 
   // Detect project switch: if character IDs change (including to empty), clear and re-render
@@ -313,17 +320,29 @@ export default function TldrawCanvas({
       (g) => g.object_id === objectId && g.object_type === objectType
     );
 
+    // Use wider cards for 16:9 content (locations, scenes) vs square for characters
+    const isWide = level === "location" || level === "scene";
+    const cardW = isWide ? 320 : 220;
+    const cardH = isWide ? 240 : 280;
+    const spacing = cardW + 20;
+
     const shapes: Parameters<Editor["createShapes"]>[0] = [];
 
-    // Add a "Generate" button card
+    // Add a "Generate" button card with context-aware label
+    const generateLabel =
+      level === "location" ? "Generate Locations" :
+      level === "scene" ? "Generate Scenes" :
+      level === "body" ? "Generate Body Shots" :
+      level === "wardrobe" ? "Generate Wardrobe" : "Generate Likenesses";
+
     shapes.push({
       type: CARD_NODE_TYPE,
       x: 0,
       y: 0,
       props: {
         w: 200,
-        h: 160,
-        label: "Generate Likenesses",
+        h: cardH,
+        label: generateLabel,
         kind: "generate",
         locked: false,
         objectId,
@@ -372,11 +391,11 @@ export default function TldrawCanvas({
 
       shapes.push({
         type: "jc-gen-image" as const,
-        x: (i + 1) * 240,
+        x: 220 + i * spacing,
         y: 0,
         props: {
-          w: 220,
-          h: 280,
+          w: cardW,
+          h: cardH,
           imageUrl: gen.cloud_url || "",
           generationId: gen.id,
           objectId,
@@ -416,25 +435,16 @@ export default function TldrawCanvas({
         if (charId) renderCharacterCanvas(charId);
       } else if (currentLevel === "location") {
         const locId = breadcrumb[breadcrumb.length - 1]?.objectId;
-        // If coming from project level, show location sub-canvas; if from location_visual, show generation canvas
-        const prevLevel = breadcrumb.length >= 2 ? breadcrumb[breadcrumb.length - 2]?.level : "project";
-        if (locId) {
-          if (prevLevel === "location") {
-            renderGenerationCanvas(locId, "location");
-          } else {
-            renderLocationCanvas(locId);
-          }
-        }
+        if (locId) renderLocationCanvas(locId);
+      } else if (currentLevel === "location_visual") {
+        const locId = breadcrumb[breadcrumb.length - 1]?.objectId;
+        if (locId) renderGenerationCanvas(locId, "location");
       } else if (currentLevel === "scene") {
         const sceneId = breadcrumb[breadcrumb.length - 1]?.objectId;
-        const prevLevel = breadcrumb.length >= 2 ? breadcrumb[breadcrumb.length - 2]?.level : "project";
-        if (sceneId) {
-          if (prevLevel === "scene") {
-            renderGenerationCanvas(sceneId, "scene");
-          } else {
-            renderSceneCanvas(sceneId);
-          }
-        }
+        if (sceneId) renderSceneCanvas(sceneId);
+      } else if (currentLevel === "scene_visual") {
+        const sceneId = breadcrumb[breadcrumb.length - 1]?.objectId;
+        if (sceneId) renderGenerationCanvas(sceneId, "scene");
       } else if (currentLevel === "face" || currentLevel === "body" || currentLevel === "wardrobe") {
         const objectId = breadcrumb[breadcrumb.length - 1]?.objectId;
         if (objectId) renderGenerationCanvas(objectId, currentLevel);
@@ -449,7 +459,7 @@ export default function TldrawCanvas({
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
-    const isGenLevel = currentLevel === "face" || currentLevel === "body" || currentLevel === "wardrobe" || currentLevel === "location" || currentLevel === "scene";
+    const isGenLevel = ["face", "body", "wardrobe", "location_visual", "scene_visual"].includes(currentLevel);
     // Build a signature from IDs + URLs + reaction count to detect any change
     const rxLen = reactions.length;
     const signature = generations.map((g) => `${g.id}:${g.cloud_url || ""}`).join(",") + `|rx:${rxLen}`;
@@ -461,9 +471,42 @@ export default function TldrawCanvas({
       prevGenSignatureRef.current = signature;
       clearCanvas();
       const objectId = breadcrumb[breadcrumb.length - 1]?.objectId;
-      if (objectId) renderGenerationCanvas(objectId, currentLevel);
+      // Map visual levels back to their generation objectType
+      const genLevel = currentLevel === "location_visual" ? "location" : currentLevel === "scene_visual" ? "scene" : currentLevel;
+      if (objectId) renderGenerationCanvas(objectId, genLevel);
     }
   }, [generations, reactions, currentLevel, breadcrumb, clearCanvas, renderGenerationCanvas]);
+
+  // Intercept entity shape deletions (right-click → Delete, or keyboard delete)
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !editorReady) return;
+
+    const ENTITY_TYPES: Record<string, "character" | "location" | "scene"> = {
+      [CHARACTER_NODE_TYPE]: "character",
+      [LOCATION_NODE_TYPE]: "location",
+      [SCENE_NODE_TYPE]: "scene",
+    };
+
+    const cleanup = editor.store.listen(({ changes }) => {
+      if (suppressDeleteRef.current) return;
+      if (currentLevelRef.current !== "project") return;
+
+      const removed = Object.values(changes.removed);
+      for (const record of removed) {
+        if (record.typeName !== "shape") continue;
+        const shape = record as unknown as { type: string; props: Record<string, unknown> };
+        const entityType = ENTITY_TYPES[shape.type];
+        if (!entityType) continue;
+        const objectId = shape.props.objectId as string | undefined;
+        if (objectId && onDeleteEntityRef.current) {
+          onDeleteEntityRef.current(objectId, entityType);
+        }
+      }
+    }, { source: "user", scope: "document" });
+
+    return cleanup;
+  }, [editorReady]);
 
   // Escape key → navigate up
   useEffect(() => {

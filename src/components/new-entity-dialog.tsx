@@ -5,6 +5,8 @@ import { User, MapPin, Clapperboard } from "lucide-react";
 
 interface NewEntityDialogProps {
   projectId: string;
+  characters?: Array<{ id: string; name: string }>;
+  locations?: Array<{ id: string; name: string }>;
   onClose: () => void;
   onCreated: () => void;
 }
@@ -15,10 +17,12 @@ const ENTITY_TYPES = [
   { type: "scene" as const, label: "Scene", Icon: Clapperboard, color: "#8A6200", descPlaceholder: "Describe what happens in this scene..." },
 ];
 
-export function NewEntityDialog({ projectId, onClose, onCreated }: NewEntityDialogProps) {
+export function NewEntityDialog({ projectId, characters = [], locations = [], onClose, onCreated }: NewEntityDialogProps) {
   const [selectedType, setSelectedType] = useState<"character" | "location" | "scene" | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [selectedCharIds, setSelectedCharIds] = useState<string[]>([]);
+  const [selectedLocId, setSelectedLocId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
 
@@ -36,6 +40,10 @@ export function NewEntityDialog({ projectId, onClose, onCreated }: NewEntityDial
           type: selectedType,
           name: name.trim(),
           description: description.trim() || undefined,
+          ...(selectedType === "scene" && {
+            characterIds: selectedCharIds,
+            locationId: selectedLocId,
+          }),
         }),
       });
 
@@ -111,10 +119,68 @@ export function NewEntityDialog({ projectId, onClose, onCreated }: NewEntityDial
               disabled={loading}
             />
 
+            {/* Scene-specific: character and location pickers */}
+            {selectedType === "scene" && (
+              <>
+                {characters.length > 0 && (
+                  <div className="mb-3">
+                    <label className="text-micro uppercase tracking-widest text-jc-text-3 block mb-1">Characters in scene</label>
+                    <div className="flex flex-wrap gap-2">
+                      {characters.map((c) => {
+                        const selected = selectedCharIds.includes(c.id);
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => setSelectedCharIds((prev) =>
+                              selected ? prev.filter((id) => id !== c.id) : [...prev, c.id]
+                            )}
+                            disabled={loading}
+                            className={`px-3 py-1 rounded text-ui border transition-colors ${
+                              selected
+                                ? "border-jc-red bg-jc-red/20 text-jc-text"
+                                : "border-jc-border bg-jc-raised text-jc-text-2 hover:text-jc-text"
+                            }`}
+                          >
+                            {c.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {locations.length > 0 && (
+                  <div className="mb-3">
+                    <label className="text-micro uppercase tracking-widest text-jc-text-3 block mb-1">Location</label>
+                    <div className="flex flex-wrap gap-2">
+                      {locations.map((l) => {
+                        const selected = selectedLocId === l.id;
+                        return (
+                          <button
+                            key={l.id}
+                            type="button"
+                            onClick={() => setSelectedLocId(selected ? null : l.id)}
+                            disabled={loading}
+                            className={`px-3 py-1 rounded text-ui border transition-colors ${
+                              selected
+                                ? "border-green-600 bg-green-900/30 text-jc-text"
+                                : "border-jc-border bg-jc-raised text-jc-text-2 hover:text-jc-text"
+                            }`}
+                          >
+                            {l.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
             <p className="text-micro text-jc-text-3 mb-3">
               {selectedType !== "scene"
                 ? "If you provide a description, a bible will be auto-generated via Claude."
-                : "Description is optional."}
+                : "Select characters and a location, then describe what happens."}
             </p>
 
             {status && <p className="text-meta text-jc-text-2 mb-3">{status}</p>}
