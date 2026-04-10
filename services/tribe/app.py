@@ -106,18 +106,15 @@ class TribeService:
         """
         Extract engagement scores from brain activation map.
 
-        fsaverage5 has ~20484 vertices. We use approximate vertex ranges
-        for key ROIs based on the Destrieux atlas mapping. These ranges
-        are approximations — for production use, load the actual atlas labels.
-
-        Scores are normalized to 0-10 scale using percentile-based mapping.
+        Uses percentile-based scoring: each ROI's mean activation is ranked
+        against the full-brain distribution. This produces spread even for
+        static images where absolute z-scores cluster near zero.
         """
         import numpy as np
 
         n = len(activation)
 
         # Approximate ROI vertex ranges on fsaverage5 (left + right hemisphere)
-        # These are rough but functional — derived from atlas label distributions
         rois = {
             "visual_salience": list(range(0, int(n * 0.05))) + list(range(int(n * 0.5), int(n * 0.55))),
             "face_recognition": list(range(int(n * 0.15), int(n * 0.18))) + list(range(int(n * 0.65), int(n * 0.68))),
@@ -127,18 +124,22 @@ class TribeService:
             "cognitive_attention": list(range(int(n * 0.08), int(n * 0.12))) + list(range(int(n * 0.58), int(n * 0.62))),
         }
 
-        # Global stats for normalization
-        global_mean = float(np.mean(activation))
-        global_std = float(np.std(activation)) or 1.0
+        # Compute ROI means
+        roi_means = {}
+        for name, indices in rois.items():
+            roi_means[name] = float(np.mean(activation[indices]))
+
+        # Use percentile rank against ALL vertices for each ROI
+        # This gives meaningful spread even when absolute values are similar
+        all_vertex_values = activation.copy()
+        sorted_vals = np.sort(all_vertex_values)
 
         scores = {}
-        for name, indices in rois.items():
-            roi_activation = activation[indices]
-            roi_mean = float(np.mean(roi_activation))
-            # Z-score relative to whole brain, then map to 0-10
-            z = (roi_mean - global_mean) / global_std
-            # Sigmoid-like mapping: z=0 → 5, z=2 → ~9, z=-2 → ~1
-            score = 10 / (1 + np.exp(-z))
+        for name, roi_mean in roi_means.items():
+            # What percentile is this ROI's mean in the full brain distribution?
+            percentile = float(np.searchsorted(sorted_vals, roi_mean)) / len(sorted_vals)
+            # Map percentile to 1-10 scale (0th percentile = 1, 100th = 10)
+            score = 1 + percentile * 9
             scores[name] = round(float(score), 1)
 
         return scores

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
+import { EVAL_AGENTS, computeScoreCard } from "@/lib/ai/eval-agents";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -10,29 +11,6 @@ function getSupabaseAdmin() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 }
-
-const SEGMENTS = ["converter", "evangelist", "skeptic", "genre_native"] as const;
-
-const PERSONA_PROMPTS: Record<string, string> = {
-  converter: `You are a mainstream viewer who doesn't normally watch this genre. You're female, 25-40, watch maybe 4 films a year (mostly drama/thriller). You value authenticity and emotional truth over spectacle. You're skeptical before you're warm. Evaluate honestly — negative reactions are as valuable as positive ones. Be specific, not generic.`,
-  evangelist: `You are a passionate viewer who will tell 10 people if something hits. You're 18-35, highly online, the person who makes things go viral. You measure enthusiasm, not just enjoyment. You're looking for THE moment — the specific thing you'd describe to someone to get them to watch. Be specific about what works AND what doesn't.`,
-  skeptic: `You are a highly resistant viewer. You look for reasons to disengage. You catch logic failures, pacing problems, derivative choices, and false notes. Your social agreeableness is LOW. If something doesn't work, say so directly and specifically. Do not soften criticism. Negative reactions are as valuable as positive ones.`,
-  genre_native: `You are a genre expert who knows the conventions deeply. You validate whether genre contracts are honored while catching derivative choices. You appreciate innovation within genre constraints. You can tell the difference between a trope used well and one used lazily.`,
-};
-
-const EVALUATION_SCHEMA = `Respond with a JSON object with these exact fields:
-{
-  "instant_reaction": "your immediate, unfiltered gut reaction in 1-2 sentences",
-  "trust_score": <0-10 integer — how much do you trust/believe in this character or world>,
-  "distinctiveness": <0-10 integer — how original/unique vs generic>,
-  "character_truth": "does this feel like a real person or a type? be specific",
-  "would_watch": <true/false — would you keep watching based on this>,
-  "compulsion_score": <0-10 integer — how urgently do you need to see what happens next>,
-  "anticipation_load": <0-10 integer — how strong is the anticipatory pull>,
-  "cost_felt": "what has the character lost or risked to get here",
-  "evangelist_moment": "a specific moment you'd describe to get someone to watch, or null"
-}
-Return ONLY valid JSON.`;
 
 export async function POST(req: NextRequest) {
   try {
@@ -55,7 +33,7 @@ export async function POST(req: NextRequest) {
 
     if (genError || !gen) throw genError || new Error("Generation not found");
 
-    // Get object context (character/location bible)
+    // Build rich context from bible
     let contextText = `Object type: ${gen.object_type}\nPrompt: ${gen.prompt}`;
 
     if (gen.object_type === "character_face" || gen.object_type === "character_body") {
@@ -65,7 +43,7 @@ export async function POST(req: NextRequest) {
         .eq("id", gen.object_id)
         .single();
       if (char) {
-        contextText += `\nCharacter: ${char.name}\nBible: ${JSON.stringify(char.bible)}`;
+        contextText += `\nCharacter: ${char.name}\nCharacter Bible: ${JSON.stringify(char.bible)}`;
       }
     } else if (gen.object_type === "location") {
       const { data: loc } = await supabase
@@ -74,111 +52,144 @@ export async function POST(req: NextRequest) {
         .eq("id", gen.object_id)
         .single();
       if (loc) {
-        contextText += `\nLocation: ${loc.name}\nBible: ${JSON.stringify(loc.bible)}`;
+        contextText += `\nLocation: ${loc.name}\nLocation Bible: ${JSON.stringify(loc.bible)}`;
+      }
+    } else if (gen.object_type === "scene") {
+      const { data: scene } = await supabase
+        .from("scenes")
+        .select("name, description")
+        .eq("id", gen.object_id)
+        .single();
+      if (scene) {
+        contextText += `\nScene: ${scene.name}\nDescription: ${scene.description}`;
       }
     }
 
-    // Fan out to all 4 Claude persona segments in parallel
-    const claudePromises = SEGMENTS.map(async (segment) => {
-      const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
-        system: `${PERSONA_PROMPTS[segment]}\n\n${EVALUATION_SCHEMA}`,
-        messages: [
-          {
-            role: "user",
-            content: `Evaluate this generated asset:\n\n${contextText}\n\nImage URL: ${gen.cloud_url || "(no image available — evaluate based on description)"}`,
-          },
-        ],
-      });
+    const imageRef = gen.cloud_url
+      ? `Image URL: ${gen.cloud_url}`
+      : "(no image available — evaluate based on description)";
 
-      const text =
-        response.content[0].type === "text" ? response.content[0].text : "{}";
-      const cleaned = text
-        .replace(/```json\n?/g, "")
-        .replace(/```\n?/g, "")
-        .trim();
-      const reaction = JSON.parse(cleaned);
+    // Run 10 evaluation agents in batches of 5 to avoid rate limits
+    const agentResults: Array<{ agentId: string; score: number; rationale: string; key_observation: string }> = [];
 
-      // Save to audience_reactions
+    for (let batch = 0; batch < EVAL_AGENTS.length; batch += 5) {
+      const batchAgents = EVAL_AGENTS.slice(batch, batch + 5);
+
+      const batchResults = await Promise.all(
+        batchAgents.map(async (agent) => {
+          try {
+            const response = await anthropic.messages.create({
+              model: "claude-sonnet-4-20250514",
+              max_tokens: 500,
+              system: agent.systemPrompt,
+              messages: [
+                {
+                  role: "user",
+                  content: `Evaluate this generated character/asset:\n\n${contextText}\n\n${imageRef}`,
+                },
+              ],
+            });
+
+            const text = response.content[0].type === "text" ? response.content[0].text : "{}";
+            const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+            const parsed = JSON.parse(cleaned);
+
+            return {
+              agentId: agent.id,
+              score: Number(parsed.score ?? 5),
+              rationale: String(parsed.rationale ?? ""),
+              key_observation: String(parsed.key_observation ?? ""),
+            };
+          } catch (err) {
+            console.error(`Agent ${agent.id} failed:`, err);
+            return { agentId: agent.id, score: 5, rationale: "Evaluation failed", key_observation: "" };
+          }
+        })
+      );
+
+      agentResults.push(...batchResults);
+    }
+
+    // Compute score card
+    const agentScores: Record<string, number> = {};
+    for (const r of agentResults) {
+      agentScores[r.agentId] = r.score;
+    }
+    const scoreCard = computeScoreCard(agentScores);
+
+    // Save each agent result as an audience_reaction
+    for (const r of agentResults) {
       const { error } = await supabase.from("audience_reactions").upsert(
         {
           generation_id: generationId,
-          segment,
-          reaction,
-          demographic_profile: { segment },
+          segment: r.agentId,
+          reaction: {
+            score: r.score,
+            rationale: r.rationale,
+            key_observation: r.key_observation,
+            agent_vector: EVAL_AGENTS.find((a) => a.id === r.agentId)?.vector,
+          },
+          demographic_profile: {
+            agent_name: EVAL_AGENTS.find((a) => a.id === r.agentId)?.name,
+            vector: EVAL_AGENTS.find((a) => a.id === r.agentId)?.vector,
+          },
         },
         { onConflict: "generation_id,segment" }
       );
+      if (error) console.error(`Save error for ${r.agentId}:`, error);
+    }
 
-      if (error) throw error;
-      return { segment, reaction };
-    });
+    // Save the aggregate score card as a special "score_card" reaction
+    await supabase.from("audience_reactions").upsert(
+      {
+        generation_id: generationId,
+        segment: "score_card",
+        reaction: scoreCard,
+        demographic_profile: { type: "aggregate", agent_count: agentResults.length },
+      },
+      { onConflict: "generation_id,segment" }
+    );
 
     // TRIBE v2 neural evaluation — fire and forget
-    // Runs independently, saves to DB when done. Does not block the response.
     const tribeUrl = process.env.TRIBE_API_URL;
     if (tribeUrl && gen.cloud_url) {
-      // Use a self-contained async function that handles its own Supabase client
       (async () => {
         try {
           const resp = await fetch(tribeUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ image_url: gen.cloud_url }),
-            signal: AbortSignal.timeout(170000), // 170s — covers cold start + inference
+            signal: AbortSignal.timeout(170000),
           });
 
-          if (!resp.ok) {
-            console.error("TRIBE error:", resp.status);
-            return;
-          }
+          if (!resp.ok) { console.error("TRIBE error:", resp.status); return; }
 
           const tribeResult = await resp.json();
-
           const neuralReaction = {
             ...tribeResult.scores,
             overall_engagement: tribeResult.overall_engagement,
-            instant_reaction: `Neural prediction: overall engagement ${tribeResult.overall_engagement}/10`,
-            trust_score: tribeResult.scores.face_recognition ?? 5,
-            distinctiveness: tribeResult.scores.visual_salience ?? 5,
-            compulsion_score: tribeResult.scores.reward_anticipation ?? 5,
-            anticipation_load: tribeResult.scores.cognitive_attention ?? 5,
-            would_watch: (tribeResult.overall_engagement ?? 5) >= 5,
-            character_truth: `Emotional arousal: ${tribeResult.scores.emotional_arousal}/10, Narrative engagement: ${tribeResult.scores.narrative_engagement}/10`,
-            cost_felt: "",
-            evangelist_moment: null,
+            score: tribeResult.overall_engagement,
+            rationale: `Neural prediction based on predicted fMRI brain activation patterns.`,
+            key_observation: `Emotional arousal: ${tribeResult.scores.emotional_arousal}/10, Reward anticipation: ${tribeResult.scores.reward_anticipation}/10`,
           };
 
-          // Use a fresh Supabase client since the original request may be done
           const { createClient: createSB } = await import("@supabase/supabase-js");
-          const sb = createSB(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.SUPABASE_SERVICE_ROLE_KEY!
-          );
-
-          const { error } = await sb.from("audience_reactions").upsert(
-            {
-              generation_id: generationId,
-              segment: "neural",
-              reaction: neuralReaction,
-              demographic_profile: { type: "tribe_v2", model: "facebook/tribev2" },
-            },
+          const sb = createSB(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+          await sb.from("audience_reactions").upsert(
+            { generation_id: generationId, segment: "neural", reaction: neuralReaction, demographic_profile: { type: "tribe_v2" } },
             { onConflict: "generation_id,segment" }
           );
-
-          if (error) console.error("TRIBE save error:", error);
-          else console.log(`[TRIBE] Neural evaluation saved for ${generationId}`);
+          console.log(`[TRIBE] Neural saved for ${generationId}`);
         } catch (err) {
-          console.error("TRIBE evaluation failed (fire-and-forget):", err);
+          console.error("TRIBE fire-and-forget failed:", err);
         }
       })();
     }
 
-    // Wait for Claude only — return immediately
-    const claudeReactions = await Promise.all(claudePromises);
-
-    return NextResponse.json({ reactions: claudeReactions });
+    return NextResponse.json({
+      scoreCard,
+      agents: agentResults,
+    });
   } catch (error) {
     console.error("Evaluation error:", error);
     return NextResponse.json(

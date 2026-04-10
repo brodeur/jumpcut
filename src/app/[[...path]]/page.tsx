@@ -232,23 +232,103 @@ export default function Home() {
       });
     };
 
+    // Evolve handler: adapt from a scored generation, then generate new variants
+    const handleEvolve = async (e: Event) => {
+      const { generationId, objectId, objectType } = (e as CustomEvent).detail;
+      console.log("[page] evolving from", generationId);
+
+      try {
+        // Step 1: Get adaptation suggestions
+        const adaptRes = await fetch("/api/adapt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ generationId }),
+        });
+
+        if (!adaptRes.ok) throw new Error("Adaptation failed");
+        const { adapted_prompt, strategy } = await adaptRes.json();
+        console.log("[evolve] Strategy:", strategy);
+
+        // Step 2: Create placeholders
+        const placeholders = Array.from({ length: 2 }, (_, i) => ({
+          id: `pending-${Date.now()}-${i}`,
+          cloud_url: "",
+        }));
+        window.dispatchEvent(new CustomEvent("jc-generate-start", {
+          detail: { placeholders, objectId, objectType },
+        }));
+
+        // Step 3: Generate with the adapted prompt
+        const style = localStorage.getItem(`jc_style_${localStorage.getItem("jc_project_id")}`) || "35mm film";
+        const genRes = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            objectId,
+            objectType,
+            prompt: adapted_prompt,
+            style,
+            count: 2,
+            conditioningRefs: [generationId], // Track lineage
+          }),
+        });
+
+        if (!genRes.ok) throw new Error("Generation failed");
+        const genData = await genRes.json();
+
+        // Step 4: Dispatch completion
+        window.dispatchEvent(new CustomEvent("jc-generate-complete", {
+          detail: { generations: genData.generations, objectId, objectType },
+        }));
+
+        // Step 5: Fire evaluations
+        for (const gen of genData.generations) {
+          fetch("/api/evaluate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ generationId: gen.id }),
+          }).catch(console.error);
+        }
+      } catch (err) {
+        console.error("Evolve failed:", err);
+      }
+    };
+
     window.addEventListener("jc-generate-start", handleStart);
     window.addEventListener("jc-generate-complete", handleComplete);
+    window.addEventListener("jc-evolve", handleEvolve);
     return () => {
       window.removeEventListener("jc-generate-start", handleStart);
       window.removeEventListener("jc-generate-complete", handleComplete);
+      window.removeEventListener("jc-evolve", handleEvolve);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const [falseNegativeAlert, setFalseNegativeAlert] = useState<{
+    diagnosis: string;
+    bible_updates: string[];
+    confidence: number;
+  } | null>(null);
+
   const handleStar = useCallback(
     async (generationId: string) => {
-      await fetch("/api/star", {
+      const res = await fetch("/api/star", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ generationId, star: true }),
       });
-      // Refresh project data to get updated starred state
+
+      const data = await res.json();
+
+      // Check for false negative detection
+      if (data.falseNegative?.detected && data.falseNegative?.suggestion) {
+        try {
+          const suggestion = JSON.parse(data.falseNegative.suggestion);
+          setFalseNegativeAlert(suggestion);
+        } catch { /* ignore parse error */ }
+      }
+
       projectData.refresh();
     },
     [projectData]
@@ -265,6 +345,56 @@ export default function Home() {
           style={projectId ? localStorage.getItem(`jc_style_${projectId}`) || "35mm film" : "35mm film"}
           onClose={() => setGenerateDialog(null)}
         />
+      )}
+
+      {/* False Negative Alert — Bible Repair Suggestion */}
+      {falseNegativeAlert && (
+        <div className="fixed inset-0 bg-jc-bg/80 flex items-center justify-center z-50">
+          <div className="bg-jc-surface border border-jc-warn rounded-lg w-[500px] p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-heading">⚠️</span>
+              <h3 className="text-name text-jc-text font-medium">
+                False Negative Detected
+              </h3>
+            </div>
+            <p className="text-meta text-jc-text-2 mb-3">
+              You starred an image that scored below the population average.
+              The evaluation system may be missing something you see.
+            </p>
+            <div className="mb-3 p-3 rounded bg-jc-raised border border-jc-border">
+              <div className="text-micro uppercase tracking-widest text-jc-warn mb-1">Diagnosis</div>
+              <div className="text-body text-jc-text">{falseNegativeAlert.diagnosis}</div>
+            </div>
+            <div className="mb-3 p-3 rounded bg-jc-raised border border-jc-border">
+              <div className="text-micro uppercase tracking-widest text-jc-text-3 mb-1">Suggested Bible Updates</div>
+              <ul className="text-body text-jc-text-2 list-disc list-inside space-y-1">
+                {falseNegativeAlert.bible_updates?.map((update, i) => (
+                  <li key={i}>{update}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="text-micro text-jc-text-3 mb-3">
+              Confidence: {falseNegativeAlert.confidence}/10
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setFalseNegativeAlert(null)}
+                className="flex-1 py-2 rounded text-ui border border-jc-border text-jc-text-2 hover:text-jc-text transition-colors"
+              >
+                Dismiss
+              </button>
+              <button
+                onClick={() => {
+                  // TODO: Apply bible updates automatically
+                  setFalseNegativeAlert(null);
+                }}
+                className="flex-1 py-2 rounded text-ui font-medium bg-jc-warn text-jc-bg hover:opacity-90 transition-colors"
+              >
+                Apply to Bible
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       <div className="h-screen flex flex-col">
         <Toolbar

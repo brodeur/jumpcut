@@ -392,11 +392,26 @@ export class GenImageNodeUtil extends ShapeUtil<GenImageShape> {
     const eyeOff = '<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49M14.084 14.158a3 3 0 0 1-4.242-4.242" stroke="currentColor" stroke-width="2" fill="none"/><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.97-5.397M3 3l18 18" stroke="currentColor" stroke-width="2" fill="none"/>';
 
     const SEGMENT_LABELS: Record<string, string> = {
+      // New 5-dimension
+      bible: "BIBLE",
+      audience: "AUDN",
+      memory: "MEMO",
+      archetype: "ARCH",
+      // Legacy
       converter: "CONV",
       evangelist: "EVNG",
       skeptic: "SKPT",
       genre_native: "NATV",
     };
+
+    // Parse overall score from new format
+    let overallScore: number | null = null;
+    try {
+      if (shape.props.reactionSummary) {
+        const parsed = JSON.parse(shape.props.reactionSummary);
+        overallScore = parsed.overall ?? null;
+      }
+    } catch { /* ignore */ }
 
     return (
       <HTMLContainer>
@@ -440,6 +455,22 @@ export class GenImageNodeUtil extends ShapeUtil<GenImageShape> {
             )}
             {starred && (
               <div style={{ position: "absolute", top: 6, right: 6, color: "#CC3300", fontSize: 16 }}>★</div>
+            )}
+            {overallScore != null && (
+              <div style={{
+                position: "absolute",
+                bottom: 6,
+                right: 6,
+                background: "rgba(0,0,0,0.7)",
+                borderRadius: 4,
+                padding: "2px 6px",
+                display: "flex",
+                alignItems: "center",
+                gap: 3,
+              }}>
+                <span style={{ fontSize: 9, color: "rgba(240,237,232,0.6)" }}>OVERALL</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: "#F0EDE8" }}>{overallScore.toFixed(1)}</span>
+              </div>
             )}
           </div>
 

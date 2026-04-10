@@ -336,25 +336,38 @@ export default function TldrawCanvas({
       const genReactions = reactions.filter((r) => r.generation_id === gen.id);
       let reactionSummary = "";
       if (genReactions.length > 0) {
-        const segments = genReactions
-          .filter((r) => r.segment !== "neural")
-          .map((r) => {
-            const rxn = r.reaction as Record<string, unknown>;
-            const trust = Number(rxn.trust_score ?? 0);
-            const distinct = Number(rxn.distinctiveness ?? 0);
-            const compulsion = Number(rxn.compulsion_score ?? 0);
-            const avgScore = (trust + distinct + compulsion) / 3;
-            return {
-              segment: r.segment,
-              avgScore: Math.round(avgScore * 100) / 100,
-              wouldWatch: !!rxn.would_watch,
-            };
-          });
+        // Try new score_card format first
+        const scoreCardRxn = genReactions.find((r) => r.segment === "score_card");
         const neuralRxn = genReactions.find((r) => r.segment === "neural");
         const neural = neuralRxn
-          ? Number((neuralRxn.reaction as Record<string, unknown>).overall_engagement ?? 0)
+          ? Number((neuralRxn.reaction as Record<string, unknown>).overall_engagement ?? (neuralRxn.reaction as Record<string, unknown>).score ?? 0)
           : null;
-        reactionSummary = JSON.stringify({ segments, neural });
+
+        if (scoreCardRxn) {
+          // New 10-agent format: use the 5-dimension score card
+          const sc = scoreCardRxn.reaction as Record<string, unknown>;
+          const segments = [
+            { segment: "bible", avgScore: Number(sc.bible_match ?? 0), wouldWatch: Number(sc.bible_match ?? 0) >= 5 },
+            { segment: "audience", avgScore: Number(sc.audience ?? 0), wouldWatch: Number(sc.audience ?? 0) >= 5 },
+            { segment: "memory", avgScore: Number(sc.memorability ?? 0), wouldWatch: Number(sc.memorability ?? 0) >= 5 },
+            { segment: "archetype", avgScore: Number(sc.archetype ?? 0), wouldWatch: Number(sc.archetype ?? 0) >= 5 },
+          ];
+          reactionSummary = JSON.stringify({ segments, neural, overall: Number(sc.overall ?? 0) });
+        } else {
+          // Legacy 4-persona format
+          const segments = genReactions
+            .filter((r) => !['neural', 'score_card'].includes(r.segment))
+            .map((r) => {
+              const rxn = r.reaction as Record<string, unknown>;
+              const score = Number(rxn.score ?? rxn.trust_score ?? 0);
+              return {
+                segment: r.segment,
+                avgScore: Math.round(score * 100) / 100,
+                wouldWatch: !!(rxn.would_watch ?? (score >= 5)),
+              };
+            });
+          reactionSummary = JSON.stringify({ segments, neural });
+        }
       }
 
       shapes.push({

@@ -254,130 +254,157 @@ function InspectorContent({
             className="w-full rounded mb-3"
           />
         )}
-        {genReactions.length === 0 && (
-          <p className="text-meta text-jc-text-3">Audience reactions pending...</p>
+
+        {/* Evolve button — triggers adaptation + next generation */}
+        {genReactions.some((r) => r.segment === "score_card") && (
+          <button
+            onClick={() => {
+              // Fire adapt + generate as a background process
+              window.dispatchEvent(new CustomEvent("jc-evolve", {
+                detail: { generationId: generation.id, objectId: generation.object_id, objectType: generation.object_type },
+              }));
+            }}
+            className="w-full mb-3 py-2 rounded text-ui font-medium bg-jc-raised border border-jc-border-em text-jc-text hover:bg-jc-surface transition-colors"
+          >
+            ↻ Evolve from this variant
+          </button>
         )}
-        {genReactions.map((r) => {
-          const rxn = r.reaction as Record<string, unknown>;
-          const isNeural = r.segment === "neural";
+        {genReactions.length === 0 && (
+          <p className="text-meta text-jc-text-3">Evaluation in progress...</p>
+        )}
 
-          if (isNeural) {
-            // Neural response card — distinct brain-themed treatment
-            return (
-              <div
-                key={r.id}
-                className="mb-3 p-2 rounded border"
-                style={{ background: "rgba(88, 28, 135, 0.15)", borderColor: "rgba(147, 51, 234, 0.3)" }}
-              >
-                <div className="text-micro uppercase tracking-widest mb-1" style={{ color: "#a78bfa" }}>
-                  🧠 Neural Response
-                </div>
-                <div className="text-body text-jc-text-2 mb-1.5 italic">
-                  {String(rxn.instant_reaction || "")}
-                </div>
-                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-micro">
-                  <span style={{ color: "#a78bfa" }}>Visual Salience</span>
-                  <span className="text-jc-text">{String(rxn.visual_salience ?? "-")}/10</span>
-                  <span style={{ color: "#a78bfa" }}>Face Recognition</span>
-                  <span className="text-jc-text">{String(rxn.face_recognition ?? "-")}/10</span>
-                  <span style={{ color: "#a78bfa" }}>Emotional Arousal</span>
-                  <span className="text-jc-text">{String(rxn.emotional_arousal ?? "-")}/10</span>
-                  <span style={{ color: "#a78bfa" }}>Reward Anticipation</span>
-                  <span className="text-jc-text">{String(rxn.reward_anticipation ?? "-")}/10</span>
-                  <span style={{ color: "#a78bfa" }}>Narrative Engage.</span>
-                  <span className="text-jc-text">{String(rxn.narrative_engagement ?? "-")}/10</span>
-                  <span style={{ color: "#a78bfa" }}>Cognitive Attn.</span>
-                  <span className="text-jc-text">{String(rxn.cognitive_attention ?? "-")}/10</span>
-                  <span style={{ color: "#a78bfa" }}>Overall</span>
-                  <span className="text-jc-text font-medium">{String(rxn.overall_engagement ?? "-")}/10</span>
-                </div>
-              </div>
-            );
-          }
-
-          // Standard persona reaction card
+        {/* Score Card — 5-dimension summary */}
+        {(() => {
+          const scoreCardRxn = genReactions.find((r) => r.segment === "score_card");
+          if (!scoreCardRxn) return null;
+          const sc = scoreCardRxn.reaction as Record<string, unknown>;
+          const dims = [
+            { label: "Bible Match", value: sc.bible_match, color: "#CC3300" },
+            { label: "Audience", value: sc.audience, color: "#CC3300" },
+            { label: "Memorability", value: sc.memorability, color: "#CC3300" },
+            { label: "Archetype", value: sc.archetype, color: "#CC3300" },
+            { label: "Overall", value: sc.overall, color: "#F0EDE8" },
+          ];
           return (
-            <div
-              key={r.id}
-              className="mb-3 p-2 rounded bg-jc-raised border border-jc-border"
-            >
-              <div className="text-micro uppercase tracking-widest text-jc-text-3 mb-1">
-                {r.segment.replace("_", " ")}
+            <div className="mb-3 p-3 rounded border border-jc-border-em bg-jc-surface">
+              <div className="text-micro uppercase tracking-widest text-jc-text-3 mb-2">
+                Score Card
               </div>
-              <div className="text-body text-jc-text-2 mb-1 italic">
-                {String(rxn.instant_reaction || "")}
-              </div>
-              <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-micro">
-                <span className="text-jc-text-3">Trust</span>
-                <span className="text-jc-text">{String(rxn.trust_score ?? "-")}/10</span>
-                <span className="text-jc-text-3">Distinct</span>
-                <span className="text-jc-text">{String(rxn.distinctiveness ?? "-")}/10</span>
-                <span className="text-jc-text-3">Compulsion</span>
-                <span className="text-jc-text">{String(rxn.compulsion_score ?? "-")}/10</span>
-                <span className="text-jc-text-3">Would watch</span>
-                <span className="text-jc-text">{rxn.would_watch ? "Yes" : "No"}</span>
-              </div>
-              {!!rxn.character_truth && (
-                <div className="mt-1 text-body text-jc-text-2">
-                  {String(rxn.character_truth)}
+              {dims.map((d) => (
+                <div key={d.label} className="flex items-center justify-between mb-1">
+                  <span className="text-meta text-jc-text-2">{d.label}</span>
+                  <span
+                    className="text-name font-bold"
+                    style={{ color: d.label === "Overall" ? "#F0EDE8" : "#CC3300" }}
+                  >
+                    {d.value != null ? Number(d.value).toFixed(1) : "-"}
+                  </span>
                 </div>
-              )}
+              ))}
             </div>
           );
-        })}
+        })()}
 
-        {/* Reaction aggregation: consensus + divergence */}
+        {/* Neural Response */}
         {(() => {
-          const personaReactions = genReactions.filter((r) => r.segment !== "neural");
-          if (personaReactions.length < 2) return null;
+          const neuralRxn = genReactions.find((r) => r.segment === "neural");
+          if (!neuralRxn) return null;
+          const rxn = neuralRxn.reaction as Record<string, unknown>;
+          return (
+            <div
+              className="mb-3 p-2 rounded border"
+              style={{ background: "rgba(88, 28, 135, 0.15)", borderColor: "rgba(147, 51, 234, 0.3)" }}
+            >
+              <div className="text-micro uppercase tracking-widest mb-1" style={{ color: "#a78bfa" }}>
+                🧠 Neural Response
+              </div>
+              <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-micro">
+                <span style={{ color: "#a78bfa" }}>Overall</span>
+                <span className="text-jc-text font-medium">{String(rxn.overall_engagement ?? rxn.score ?? "-")}/10</span>
+                <span style={{ color: "#a78bfa" }}>Emotional Arousal</span>
+                <span className="text-jc-text">{String(rxn.emotional_arousal ?? "-")}/10</span>
+                <span style={{ color: "#a78bfa" }}>Reward Anticipation</span>
+                <span className="text-jc-text">{String(rxn.reward_anticipation ?? "-")}/10</span>
+              </div>
+            </div>
+          );
+        })()}
 
-          const scores = personaReactions.map((r) => {
+        {/* Agent Details — expandable */}
+        {(() => {
+          const agentRxns = genReactions.filter(
+            (r) => r.segment !== "score_card" && r.segment !== "neural" &&
+            !['converter', 'evangelist', 'skeptic', 'genre_native'].includes(r.segment)
+          );
+          if (agentRxns.length === 0) {
+            // Show legacy reactions if no new agents yet
+            const legacyRxns = genReactions.filter((r) =>
+              ['converter', 'evangelist', 'skeptic', 'genre_native'].includes(r.segment)
+            );
+            if (legacyRxns.length === 0) return null;
+            return legacyRxns.map((r) => {
+              const rxn = r.reaction as Record<string, unknown>;
+              return (
+                <div key={r.id} className="mb-2 p-2 rounded bg-jc-raised border border-jc-border">
+                  <div className="text-micro uppercase tracking-widest text-jc-text-3 mb-0.5">
+                    {r.segment.replace("_", " ")}
+                  </div>
+                  <div className="text-body text-jc-text-2 italic">{String(rxn.instant_reaction || "")}</div>
+                  <div className="text-micro text-jc-text-3 mt-0.5">Score: {String(rxn.trust_score ?? "-")}/10</div>
+                </div>
+              );
+            });
+          }
+
+          // Group by vector
+          const bibleAgents = agentRxns.filter((r) => {
             const rxn = r.reaction as Record<string, unknown>;
-            return {
-              segment: r.segment,
-              trust: Number(rxn.trust_score ?? 0),
-              distinct: Number(rxn.distinctiveness ?? 0),
-              compulsion: Number(rxn.compulsion_score ?? 0),
-              wouldWatch: !!rxn.would_watch,
-            };
+            return rxn.agent_vector === "bible_match";
+          });
+          const audienceAgents = agentRxns.filter((r) => {
+            const rxn = r.reaction as Record<string, unknown>;
+            return rxn.agent_vector === "audience";
           });
 
-          const avgTrust = scores.reduce((s, r) => s + r.trust, 0) / scores.length;
-          const avgDistinct = scores.reduce((s, r) => s + r.distinct, 0) / scores.length;
-          const avgCompulsion = scores.reduce((s, r) => s + r.compulsion, 0) / scores.length;
-          const watchCount = scores.filter((r) => r.wouldWatch).length;
-
-          // Find max divergence
-          const trustRange = Math.max(...scores.map((r) => r.trust)) - Math.min(...scores.map((r) => r.trust));
-          const compulsionRange = Math.max(...scores.map((r) => r.compulsion)) - Math.min(...scores.map((r) => r.compulsion));
-          const hasDivergence = trustRange >= 4 || compulsionRange >= 4;
+          const renderAgent = (r: typeof agentRxns[0]) => {
+            const rxn = r.reaction as Record<string, unknown>;
+            return (
+              <div key={r.id} className="mb-2 p-2 rounded bg-jc-raised border border-jc-border">
+                <div className="flex items-center justify-between mb-0.5">
+                  <span className="text-micro uppercase tracking-widest text-jc-text-3">
+                    {r.segment.replace(/_/g, " ")}
+                  </span>
+                  <span className="text-ui font-bold text-jc-text">{Number(rxn.score ?? 0).toFixed(1)}</span>
+                </div>
+                {!!rxn.key_observation && (
+                  <div className="text-body text-jc-text-2 italic mb-0.5">
+                    {String(rxn.key_observation)}
+                  </div>
+                )}
+                {!!rxn.rationale && (
+                  <div className="text-micro text-jc-text-3">
+                    {String(rxn.rationale)}
+                  </div>
+                )}
+              </div>
+            );
+          };
 
           return (
-            <div className="mt-2 p-2 rounded border border-jc-border-em bg-jc-surface">
-              <div className="text-micro uppercase tracking-widest text-jc-text-3 mb-1.5">
-                Aggregate
-              </div>
-              <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-micro mb-2">
-                <span className="text-jc-text-3">Avg Trust</span>
-                <span className="text-jc-text">{avgTrust.toFixed(1)}/10</span>
-                <span className="text-jc-text-3">Avg Distinct</span>
-                <span className="text-jc-text">{avgDistinct.toFixed(1)}/10</span>
-                <span className="text-jc-text-3">Avg Compulsion</span>
-                <span className="text-jc-text">{avgCompulsion.toFixed(1)}/10</span>
-                <span className="text-jc-text-3">Would Watch</span>
-                <span className="text-jc-text">{watchCount}/{scores.length}</span>
-              </div>
-              {hasDivergence && (
-                <div className="text-body text-jc-warn">
-                  ⚡ Divergence detected — segments disagree on {trustRange >= 4 ? "trust" : ""}{trustRange >= 4 && compulsionRange >= 4 ? " and " : ""}{compulsionRange >= 4 ? "compulsion" : ""}. This is creative decision territory.
+            <>
+              {bibleAgents.length > 0 && (
+                <div className="mb-2">
+                  <div className="text-micro uppercase tracking-widest text-jc-red mb-1">Bible Match</div>
+                  {bibleAgents.map(renderAgent)}
                 </div>
               )}
-              {!hasDivergence && personaReactions.length >= 3 && (
-                <div className="text-body text-jc-confirm">
-                  ✓ Consensus — segments broadly agree on this asset.
+              {audienceAgents.length > 0 && (
+                <div className="mb-2">
+                  <div className="text-micro uppercase tracking-widest text-jc-red mb-1">Audience</div>
+                  {audienceAgents.map(renderAgent)}
                 </div>
               )}
-            </div>
+            </>
           );
         })()}
       </div>
