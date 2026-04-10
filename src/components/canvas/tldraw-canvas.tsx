@@ -230,7 +230,10 @@ export default function TldrawCanvas({
     scenes.forEach((s) => {
       const pos = posMap.get(s.id) ?? { x: (idx % GRID_COLS) * SPACING_X, y: Math.floor(idx / GRID_COLS) * SPACING_Y };
       idx++;
-      shapes.push({ type: SCENE_NODE_TYPE, x: pos.x, y: pos.y, props: { w: 220, h: 160, name: s.name, status: "empty", objectId: s.id, thumbnailUrl: "" } });
+      const starredScene = generations.find(
+        (g) => g.object_id === s.id && g.object_type === "scene" && g.starred && g.cloud_url
+      );
+      shapes.push({ type: SCENE_NODE_TYPE, x: pos.x, y: pos.y, props: { w: 220, h: 160, name: s.name, status: starredScene ? "generated" : "empty", objectId: s.id, thumbnailUrl: starredScene?.cloud_url || "" } });
     });
 
     if (shapes.length > 0) {
