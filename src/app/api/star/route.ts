@@ -32,13 +32,16 @@ export async function POST(req: NextRequest) {
     if (genError || !gen) throw genError || new Error("Generation not found");
 
     if (star) {
-      // Unstar any currently starred generation for this object+type
-      await supabase
-        .from("generations")
-        .update({ starred: false })
-        .eq("object_id", gen.object_id)
-        .eq("object_type", gen.object_type)
-        .eq("starred", true);
+      // For face and body: single star only (unstar previous)
+      // For wardrobe: allow multiple stars (different outfits for different scenes)
+      if (gen.object_type !== "wardrobe") {
+        await supabase
+          .from("generations")
+          .update({ starred: false })
+          .eq("object_id", gen.object_id)
+          .eq("object_type", gen.object_type)
+          .eq("starred", true);
+      }
 
       // Star the selected one
       await supabase

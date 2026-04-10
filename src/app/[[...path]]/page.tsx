@@ -12,11 +12,23 @@ import { NewEntityDialog } from "@/components/new-entity-dialog";
 import { useProject } from "@/lib/hooks/use-project";
 import type { Generation } from "@/lib/types";
 
+/** Per-character reference options for scene generation picker */
+export interface CharacterRefOption {
+  characterId: string;
+  characterName: string;
+  options: Array<{ url: string; type: string; starred: boolean }>;
+  defaultUrl: string | null;
+}
+
 interface GenerateDialogState {
   objectId: string;
   objectType: string;
   defaultPrompt: string;
   imageUrls: string[];
+  /** Scene-only: per-character ref options for the wardrobe picker */
+  characterRefs?: CharacterRefOption[];
+  /** Scene-only: starred location URL (always included, not user-selectable) */
+  locationRefUrl?: string;
 }
 
 const PROJECT_ID_KEY = "jc_project_id";
@@ -191,31 +203,50 @@ export default function Home() {
       } else if (objectType === "scene") {
         const scene = scenes.find((s) => s.id === objectId);
         const desc = scene?.description || "";
-        // Collect starred character images + starred location visual as references
+        // Build per-character reference options for the picker
         const sceneChars = characters.filter((c) => scene?.character_ids?.includes(c.id));
         const charDescs: string[] = [];
+        const characterRefs: CharacterRefOption[] = [];
+
         for (const c of sceneChars) {
-          const starredFace = generations.find(
-            (g) => g.object_id === c.id && g.object_type === "character_face" && g.starred && g.cloud_url
+          // Only show starred assets: multiple wardrobe stars allowed, one face, one body
+          const starredGens = generations.filter(
+            (g) => g.object_id === c.id && g.cloud_url && g.starred &&
+              ["wardrobe", "character_body", "character_face"].includes(g.object_type)
           );
-          const starredBody = generations.find(
-            (g) => g.object_id === c.id && g.object_type === "character_body" && g.starred && g.cloud_url
-          );
-          // Prefer body (includes face conditioning), fall back to face
-          if (starredBody?.cloud_url) imageUrls.push(starredBody.cloud_url);
-          else if (starredFace?.cloud_url) imageUrls.push(starredFace.cloud_url);
+          const options = starredGens.map((g) => ({
+            url: g.cloud_url!,
+            type: g.object_type,
+            starred: g.starred,
+          }));
+          // Default: first starred wardrobe > starred body > starred face
+          const starredWardrobe = starredGens.find((g) => g.object_type === "wardrobe");
+          const starredBody = starredGens.find((g) => g.object_type === "character_body");
+          const starredFace = starredGens.find((g) => g.object_type === "character_face");
+          const defaultUrl = starredWardrobe?.cloud_url || starredBody?.cloud_url || starredFace?.cloud_url || null;
+
+          characterRefs.push({ characterId: c.id, characterName: c.name, options, defaultUrl });
+          if (defaultUrl) imageUrls.push(defaultUrl);
           charDescs.push(c.name);
         }
+
         // Add starred location visual
+        let locationRefUrl: string | undefined;
         const loc = locations.find((l) => l.id === scene?.location_id);
         if (loc) {
           const starredLoc = generations.find(
             (g) => g.object_id === loc.id && g.object_type === "location" && g.starred && g.cloud_url
           );
-          if (starredLoc?.cloud_url) imageUrls.push(starredLoc.cloud_url);
+          if (starredLoc?.cloud_url) {
+            locationRefUrl = starredLoc.cloud_url;
+            imageUrls.push(starredLoc.cloud_url);
+          }
         }
         const refNote = imageUrls.length > 0 ? " Use the reference images for character and location consistency." : "";
         defaultPrompt = `Cinematic scene still. ${desc}. Characters present: ${charDescs.join(", ") || "unknown"}. Location: ${loc?.name || "unknown"}.${refNote}`;
+
+        setGenerateDialog({ objectId, objectType, defaultPrompt, imageUrls, characterRefs, locationRefUrl });
+        return;
       }
 
       setGenerateDialog({ objectId, objectType, defaultPrompt, imageUrls });
@@ -406,6 +437,8 @@ export default function Home() {
           defaultPrompt={generateDialog.defaultPrompt}
           style={projectId ? localStorage.getItem(`jc_style_${projectId}`) || "35mm film" : "35mm film"}
           imageUrls={generateDialog.imageUrls}
+          characterRefs={generateDialog.characterRefs}
+          locationRefUrl={generateDialog.locationRefUrl}
           onClose={() => setGenerateDialog(null)}
         />
       )}

@@ -271,7 +271,7 @@ const CARD_KIND_CONFIG: Record<string, { color: string; svgPath: string }> = {
   },
   scene_visual: {
     color: "#8A6200",
-    svgPath: '<path d="m2 2 20 20M22 2 12 12" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="2" y="8" width="20" height="8" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>',
+    svgPath: '<rect x="2" y="4" width="20" height="16" rx="2" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="m10 9 5 3-5 3z" stroke="currentColor" stroke-width="1.5" fill="currentColor"/>',
   },
 };
 

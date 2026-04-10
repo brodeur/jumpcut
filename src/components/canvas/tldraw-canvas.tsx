@@ -95,6 +95,9 @@ export default function TldrawCanvas({
         drillDownRef.current("scene_visual", objectId, label);
       } else if (kind === "generate") {
         if (onOpenGenerateRef.current) {
+          // Interrupt tldraw's pointer state so the shape doesn't stick to cursor
+          // when the dialog overlay captures focus before pointer_up
+          editor.interrupt();
           const lvl = currentLevelRef.current;
           const objectType =
             lvl === "body" ? "character_body" :

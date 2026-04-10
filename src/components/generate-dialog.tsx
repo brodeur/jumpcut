@@ -1,6 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import type { CharacterRefOption } from "@/app/[[...path]]/page";
+
+const REF_TYPE_LABELS: Record<string, string> = {
+  wardrobe: "Wardrobe",
+  character_body: "Body",
+  character_face: "Face",
+};
 
 interface GenerateDialogProps {
   defaultPrompt: string;
@@ -8,6 +15,10 @@ interface GenerateDialogProps {
   objectType: string;
   style?: string;
   imageUrls?: string[];
+  /** Scene-only: per-character reference options for wardrobe picker */
+  characterRefs?: CharacterRefOption[];
+  /** Scene-only: location ref always included */
+  locationRefUrl?: string;
   onClose: () => void;
 }
 
@@ -17,12 +28,40 @@ export function GenerateDialog({
   objectType,
   style,
   imageUrls = [],
+  characterRefs,
+  locationRefUrl,
   onClose,
 }: GenerateDialogProps) {
   const [prompt, setPrompt] = useState(defaultPrompt);
 
+  // Per-character selected reference URL (for scene picker)
+  const [selectedRefs, setSelectedRefs] = useState<Record<string, string | null>>(() => {
+    if (!characterRefs) return {};
+    const initial: Record<string, string | null> = {};
+    for (const cr of characterRefs) {
+      initial[cr.characterId] = cr.defaultUrl;
+    }
+    return initial;
+  });
+
+  const isScene = objectType === "scene" && characterRefs && characterRefs.length > 0;
+
+  // Build final imageUrls: for scenes, assemble from picker selections + location
+  const getFinalImageUrls = (): string[] => {
+    if (!isScene) return imageUrls;
+    const urls: string[] = [];
+    for (const cr of characterRefs!) {
+      const selected = selectedRefs[cr.characterId];
+      if (selected) urls.push(selected);
+    }
+    if (locationRefUrl) urls.push(locationRefUrl);
+    return urls;
+  };
+
   const handleGenerate = () => {
     if (!prompt.trim()) return;
+
+    const finalImageUrls = getFinalImageUrls();
 
     // Create 2 placeholder entries immediately
     const placeholders = Array.from({ length: 2 }, (_, i) => ({
@@ -49,7 +88,7 @@ export function GenerateDialog({
         prompt: prompt.trim(),
         style,
         count: 2,
-        imageUrls,
+        imageUrls: finalImageUrls,
       }),
     })
       .then((res) => {
@@ -79,10 +118,10 @@ export function GenerateDialog({
 
   return (
     <div className="fixed inset-0 bg-jc-bg/80 flex items-center justify-center z-50">
-      <div className="bg-jc-surface border border-jc-border rounded-lg w-[500px] p-5">
+      <div className="bg-jc-surface border border-jc-border rounded-lg w-[560px] max-h-[80vh] overflow-y-auto p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-name text-jc-text font-medium">
-            Generate Likenesses
+            {isScene ? "Generate Scene" : "Generate Likenesses"}
           </h3>
           <button
             onClick={onClose}
@@ -97,7 +136,64 @@ export function GenerateDialog({
           audience will evaluate each one automatically.
         </p>
 
-        {imageUrls.length > 0 && (
+        {/* Scene: per-character reference picker */}
+        {isScene && (
+          <div className="mb-3 space-y-3">
+            {characterRefs!.map((cr) => (
+              <div key={cr.characterId} className="p-2 rounded bg-jc-raised border border-jc-border">
+                <div className="text-micro uppercase tracking-widest text-jc-text-3 mb-2">
+                  {cr.characterName}
+                  {cr.options.length === 0 && <span className="ml-1 text-jc-text-3/50">— no images yet</span>}
+                </div>
+                {cr.options.length > 0 && (
+                  <div className="flex gap-2 overflow-x-auto">
+                    {cr.options.map((opt, i) => {
+                      const isSelected = selectedRefs[cr.characterId] === opt.url;
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setSelectedRefs((prev) => ({
+                            ...prev,
+                            [cr.characterId]: isSelected ? null : opt.url,
+                          }))}
+                          className="flex-shrink-0 relative group"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={opt.url}
+                            alt={`${cr.characterName} ${opt.type}`}
+                            className={`h-16 w-16 rounded object-cover border-2 transition-colors ${
+                              isSelected
+                                ? "border-jc-red"
+                                : "border-jc-border group-hover:border-jc-border-em"
+                            }`}
+                          />
+                          <span className="absolute bottom-0 left-0 right-0 text-center bg-black/70 text-[8px] text-jc-text-2 py-0.5 rounded-b">
+                            {REF_TYPE_LABELS[opt.type] || opt.type}
+                            {opt.starred && " ★"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
+            {locationRefUrl && (
+              <div className="p-2 rounded bg-jc-raised border border-jc-border">
+                <div className="text-micro uppercase tracking-widest text-jc-text-3 mb-2">Location</div>
+                <div className="flex gap-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={locationRefUrl} alt="Location" className="h-12 rounded border border-green-800 object-cover" />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Non-scene: simple reference image row */}
+        {!isScene && imageUrls.length > 0 && (
           <div className="mb-3 p-2 rounded bg-jc-raised border border-jc-border">
             <div className="text-micro uppercase tracking-widest text-jc-text-3 mb-2">Reference images ({imageUrls.length})</div>
             <div className="flex gap-2 overflow-x-auto">
