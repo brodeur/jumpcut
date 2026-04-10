@@ -45,7 +45,14 @@ export async function POST(req: NextRequest) {
         const resp = await anthropic.messages.create({
           model: "claude-sonnet-4-20250514",
           max_tokens: 500,
-          system: `You are a casting director. Given a character description for image generation, produce ${count} brief, distinct casting directions. Each should push toward a genuinely different physical interpretation of the same character — different age, ethnicity, build, energy, or look. Keep each direction to 1-2 sentences. Return ONLY a JSON array of strings.`,
+          system: `You are a casting director. Given a character description for image generation, produce ${count} brief, distinct casting directions.
+
+CRITICAL RULES:
+- NEVER change explicitly stated physical traits (ethnicity, race, gender, age range, eye color, hair color, etc.). If the description says "white male" or "East Asian woman" or "mid-50s", every variant MUST match those traits exactly.
+- DO vary: expression, energy, grooming, facial hair style, hairstyle, build within the stated range, clothing interpretation, lighting mood, posture, intensity level, degree of weathering/polish.
+- Each direction should feel like a different actor walking in for the same role — same type, different person.
+
+Keep each direction to 1-2 sentences. Return ONLY a JSON array of strings.`,
           messages: [{ role: "user", content: prompt }],
         });
         const text = resp.content[0].type === "text" ? resp.content[0].text : "[]";
