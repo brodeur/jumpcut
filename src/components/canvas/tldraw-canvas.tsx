@@ -5,7 +5,7 @@ import { Tldraw, type Editor, type TldrawOptions, type StateNode, type TLClickEv
 import "tldraw/tldraw.css";
 import { customShapeUtils } from "./shapes/shape-utils";
 import { useCanvas } from "@/lib/store/canvas-store";
-import type { Character, Location, Scene, CanvasNode, Generation, AudienceReaction, CanvasLevel } from "@/lib/types";
+import type { Character, Location, Scene, CanvasNode, Generation, AudienceReaction } from "@/lib/types";
 import {
   CHARACTER_NODE_TYPE,
   LOCATION_NODE_TYPE,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { CanvasProvider } from "@/components/providers/canvas-provider";
 import { Toolbar } from "@/components/toolbar";
 import { NodeBrowser } from "@/components/sidebar/node-browser";
@@ -30,9 +30,12 @@ export default function Home() {
   const [showNewEntity, setShowNewEntity] = useState(false);
   // Merge persisted generations from DB with newly generated ones (before next fetch)
   const [newGenerations, setNewGenerations] = useState<Generation[]>([]);
-  const generations = [...projectData.generations, ...newGenerations.filter(
-    (ng) => !projectData.generations.some((pg) => pg.id === ng.id)
-  )];
+  const generations = useMemo(() => [
+    ...projectData.generations,
+    ...newGenerations.filter(
+      (ng) => !projectData.generations.some((pg) => pg.id === ng.id)
+    ),
+  ], [projectData.generations, newGenerations]);
 
   // On mount: resolve project from URL, localStorage, or most recent
   useEffect(() => {
