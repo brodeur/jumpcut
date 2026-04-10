@@ -178,10 +178,10 @@ export default function TldrawCanvas({
     });
   }, []);
 
-  // Detect project switch: if character IDs change, clear and re-render
+  // Detect project switch: if character IDs change (including to empty), clear and re-render
   useEffect(() => {
     const charIds = characters.map((c) => c.id).join(",");
-    if (prevCharIdsRef.current && charIds && charIds !== prevCharIdsRef.current) {
+    if (prevCharIdsRef.current !== "" && charIds !== prevCharIdsRef.current) {
       clearCanvas();
       shapesCreatedRef.current = false;
       prevLevelRef.current = "project";
