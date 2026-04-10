@@ -198,7 +198,8 @@ export default function TldrawCanvas({
         editor.deleteShapes(allShapes.map((s) => s.id));
       }
     });
-    suppressDeleteRef.current = false;
+    // Delay reset — store listeners fire asynchronously after editor.run()
+    requestAnimationFrame(() => { suppressDeleteRef.current = false; });
   }, []);
 
   // Detect project switch: if character IDs change (including to empty), clear and re-render
@@ -558,31 +559,29 @@ export default function TldrawCanvas({
     if (!pendingDelete) return;
     const editor = editorRef.current;
 
+    suppressDeleteRef.current = true;
+
     if (pendingDelete.kind === "entity" && pendingDelete.entityType) {
-      // Delete entity shape from canvas + DB
       if (editor) {
-        suppressDeleteRef.current = true;
         const shapes = editor.getCurrentPageShapes();
         const shape = shapes.find((s) => (s.props as Record<string, unknown>).objectId === pendingDelete.id);
         if (shape) editor.deleteShapes([shape.id]);
-        suppressDeleteRef.current = false;
       }
       if (onDeleteEntityRef.current) {
         onDeleteEntityRef.current(pendingDelete.id, pendingDelete.entityType);
       }
     } else if (pendingDelete.kind === "generation") {
-      // Delete gen-image shape from canvas + DB
       if (editor) {
-        suppressDeleteRef.current = true;
         const shapes = editor.getCurrentPageShapes();
         const shape = shapes.find((s) => (s.props as Record<string, unknown>).generationId === pendingDelete.id);
         if (shape) editor.deleteShapes([shape.id]);
-        suppressDeleteRef.current = false;
       }
       if (onDeleteGenerationRef.current) {
         onDeleteGenerationRef.current(pendingDelete.id);
       }
     }
+
+    requestAnimationFrame(() => { suppressDeleteRef.current = false; });
 
     setPendingDelete(null);
   }, [pendingDelete]);
