@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const getAnthropic = () => new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export interface CharacterBible {
   role: string;
@@ -65,7 +65,7 @@ export async function generateCharacterBible(
   description: string,
   scriptContext: string
 ): Promise<CharacterBible> {
-  const response = await anthropic.messages.create({
+  const response = await getAnthropic().messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 2000,
     messages: [
@@ -89,7 +89,7 @@ export async function generateLocationBible(
   description: string,
   scriptContext: string
 ): Promise<LocationBible> {
-  const response = await anthropic.messages.create({
+  const response = await getAnthropic().messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 1500,
     messages: [

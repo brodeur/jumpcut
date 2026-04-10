@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { EVAL_AGENTS, computeScoreCard } from "@/lib/ai/eval-agents";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const getAnthropic = () => new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 function getSupabaseAdmin() {
   return createClient(
@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
       const batchResults = await Promise.all(
         batchAgents.map(async (agent) => {
           try {
-            const response = await anthropic.messages.create({
+            const response = await getAnthropic().messages.create({
               model: "claude-sonnet-4-20250514",
               max_tokens: 500,
               system: agent.systemPrompt,

@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const getAnthropic = () => new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
         ? `You are an AI assistant embedded in JUMP//CUT, an Integrated Filmmaking Environment. The user has selected a specific object on the canvas. Here is the full context for this object:\n\n${context}\n\nAnswer questions about this specific object. Be concise and actionable. If the user asks about audience reactions or generation suggestions, frame your answers in terms of what would improve the creative output.`
         : `You are an AI assistant embedded in JUMP//CUT, an Integrated Filmmaking Environment. You have access to the full project context:\n\n${context}\n\nAnswer questions about the entire project. You can compare characters, analyze audience reactions across the project, identify structural patterns, and suggest improvements. Be concise and specific.`;
 
-    const stream = await anthropic.messages.stream({
+    const stream = await getAnthropic().messages.stream({
       model: "claude-sonnet-4-20250514",
       max_tokens: 1500,
       system: systemPrompt,

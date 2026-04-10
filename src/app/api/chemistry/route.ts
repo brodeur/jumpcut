@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const getAnthropic = () => new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 function getSupabase() {
   return createClient(
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
       ? `Character B: ${charB.name}\nBible: ${JSON.stringify(charB.bible)}\nImage: ${genB.cloud_url}`
       : `Character B image: ${genB.cloud_url}`;
 
-    const response = await anthropic.messages.create({
+    const response = await getAnthropic().messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 1000,
       system: `You are an Ensemble Chemistry Agent — a specialist in evaluating how two characters work together visually and dramatically. You assess whether two characters create productive tension, visual contrast, and dramatic potential when placed in the same frame.
