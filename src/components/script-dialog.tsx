@@ -20,7 +20,7 @@ export function ScriptDialog({ onIngest }: ScriptDialogProps) {
   const [mode, setMode] = useState<Mode>("choose");
   const [scriptText, setScriptText] = useState("");
   const [projectName, setProjectName] = useState("");
-  const [visualStyle, setVisualStyle] = useState(VISUAL_STYLES[0].value);
+  const [visualStyle, setVisualStyle] = useState<string>(VISUAL_STYLES[0].value);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
 

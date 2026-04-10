@@ -128,7 +128,7 @@ function mergeExtractions(results: ScriptExtraction[]): ScriptExtraction {
       if (charMap.has(key)) {
         // Merge scene lists
         const existing = charMap.get(key)!;
-        existing.scenes = [...new Set([...existing.scenes, ...c.scenes])];
+        existing.scenes = Array.from(new Set([...existing.scenes, ...c.scenes]));
         // Use longer description
         if (c.description.length > existing.description.length) {
           existing.description = c.description;
